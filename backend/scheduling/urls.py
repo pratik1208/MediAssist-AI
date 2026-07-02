@@ -1,4 +1,5 @@
 from django.urls import path
+
 from scheduling.views import (
     AppointmentCRUDAPIView,
     ConversationCRUDAPIView,

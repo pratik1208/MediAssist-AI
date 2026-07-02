@@ -1,4 +1,5 @@
 from django.contrib import admin as django_admin
+
 from scheduling.models import (
     Appointment,
     Conversation,
