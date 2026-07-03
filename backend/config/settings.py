@@ -128,3 +128,9 @@ CORS_ALLOWED_ORIGINS = []
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+
+
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
+os.environ["LANGSMITH_PROJECT"] = "MediAssist-AI"
