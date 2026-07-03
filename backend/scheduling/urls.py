@@ -1,4 +1,5 @@
 from django.urls import path
+from scheduling.views import ChatAPIView
 
 from scheduling.views import (
     AppointmentCRUDAPIView,
@@ -10,6 +11,7 @@ from scheduling.views import (
 )
 
 urlpatterns = [
+    path("chat", ChatAPIView.as_view()),
     path("patients", PatientCRUDAPIView.as_view()),
     path("patients/<int:id>", PatientCRUDAPIView.as_view()),
     path("doctors", DoctorCRUDAPIView.as_view()),

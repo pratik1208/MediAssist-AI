@@ -2,8 +2,13 @@ import requests
 
 from scheduling.ai.prompts import SCHEDULING_SYSTEM_PROMPT
 from scheduling.ai.tools import EXTRACT_BOOKING_INTENT_TOOL
+from langsmith import traceable
 
 
+@traceable(
+    name="Extract Booking Intent",
+    run_type="llm",
+)
 def extract_intent_ollama(conversation_history):
     response = requests.post(
         "http://localhost:11434/api/chat",

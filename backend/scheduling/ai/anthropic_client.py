@@ -1,10 +1,16 @@
 from anthropic import Anthropic
-from scheduling.ai.tools import EXTRACT_BOOKING_INTENT_TOOL
+from langsmith import traceable
+
 from scheduling.ai.prompts import SCHEDULING_SYSTEM_PROMPT
+from scheduling.ai.tools import EXTRACT_BOOKING_INTENT_TOOL
 
 client = Anthropic()
 
 
+@traceable(
+    name="Extract Booking Intent",
+    run_type="llm",
+)
 def extract_intent_anthropic(conversation_history):
 
     response = client.messages.create(

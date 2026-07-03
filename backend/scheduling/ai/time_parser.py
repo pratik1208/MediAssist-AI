@@ -1,5 +1,5 @@
 from datetime import datetime, time, timedelta
-
+from django.utils import timezone
 
 def parse_preferred_timeframe(preferred_timeframe):
     """
@@ -10,7 +10,7 @@ def parse_preferred_timeframe(preferred_timeframe):
     if not preferred_timeframe:
         return None, None
 
-    now = datetime.now()
+    now = timezone.now()
 
     timeframe = preferred_timeframe.lower().strip()
 
@@ -18,7 +18,7 @@ def parse_preferred_timeframe(preferred_timeframe):
         start = datetime.combine(now.date(), time(0, 0))
         end = datetime.combine(now.date(), time(23, 59))
         return start, end
-
+    tomorrow = timezone.now().date() + timedelta(days=1)
     if timeframe == "tomorrow":
         tomorrow = now.date() + timedelta(days=1)
 
