@@ -42,13 +42,13 @@ def handle_patient_message(conversation_history):
             "message": ("When would you like to schedule your appointment? " "For example: today, tomorrow morning, or tomorrow afternoon."),
         }
     date_from, date_to = parse_preferred_timeframe(preferred_timeframe)
-    # Step 4: Find doctors for the specialization
-    doctors = Doctor.objects.filter(specialization=intent.get("specialization"))
+    # Step 4: Find doctors for the specialty
+    doctors = Doctor.objects.filter(specialty=intent.get("specialty"))
 
     if not doctors.exists():
         return {
             "type": "no_doctor",
-            "message": (f"No doctors are currently available for " f"{intent.get('specialization')}."),
+            "message": (f"No doctors are currently available for " f"{intent.get('specialty')}."),
         }
 
     doctor = doctors.first()
@@ -63,6 +63,6 @@ def handle_patient_message(conversation_history):
     return {
         "type": "slots",
         "doctor": doctor.name,
-        "specialization": doctor.specialization,
+        "specialty": doctor.specialty,
         "slots": slots,
     }

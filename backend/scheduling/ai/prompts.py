@@ -26,11 +26,11 @@ EXTRACT_BOOKING_INTENT_TOOL = {
                 "enum": ["low", "medium", "high", "emergency"],
                 "description": ("'emergency' = red-flag symptoms needing " "immediate care, not a scheduled visit"),
             },
-            "specialization": {"type": "string", "description": "Best-guess specialization needed"},
+            "specialty": {"type": "string", "description": "Best-guess specialty needed"},
             "preferred_timeframe": {"type": "string", "description": "When they want to be seen, in their words"},
             "needs_clarification": {
                 "type": "boolean",
-                "description": ("True if the message is too vague to safely " "guess urgency or specialization."),
+                "description": ("True if the message is too vague to safely " "guess urgency or specialty."),
             },
         },
         "required": [
