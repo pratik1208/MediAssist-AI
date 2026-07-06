@@ -71,7 +71,7 @@ def book_appointment(
         start_time=start,
         end_time=end,
         status="booked",
-        reason_text=reason,
+        reason=reason,
         urgency=urgency,
     )
 
@@ -107,7 +107,7 @@ def promote_next_waitlisted(
         start_time=freed_start,
         end_time=freed_end,
         status="booked",
-        reason_text="Promoted from waitlist",
+        reason="Promoted from waitlist",
         urgency=patient.urgency,
     )
 
