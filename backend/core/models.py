@@ -126,7 +126,7 @@ class Conversation(models.Model):
     channel = models.CharField(
         max_length=20,
         choices=CHANNEL_CHOICES,
-        default="web",
+        default="sms",
     )
     agent_context = models.JSONField(
         default=dict,

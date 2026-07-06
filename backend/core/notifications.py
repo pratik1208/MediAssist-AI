@@ -33,11 +33,8 @@ _TEMPLATES: dict[str, str] = {
 
 
 def render_template(template: str, context: dict, language: str = "en") -> str:
-    """Turn a template name + data into the final message text.
+    """render_template() looks up a message template, replaces placeholders like {name} with values from context, and safely falls back to the original text if the template or required values are missing."""
 
-    Simplest version: look the name up in _TEMPLATES and fill in {placeholders}.
-    Unknown names fall back to the name itself so nothing crashes in dev.
-    """
     body = _TEMPLATES.get(template, template)
     try:
         return body.format(**context)

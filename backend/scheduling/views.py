@@ -7,12 +7,10 @@ from scheduling.ai.handler import handle_patient_message
 from scheduling.base_crud_views import BaseCRUDAPIView
 from scheduling.models import (
     Appointment,
-    Conversation,
-    Doctor,
-    Message,
-    Patient,
     Waitlist,
 )
+from core.models import Message, Patient, Doctor, Conversation
+
 from scheduling.serializers import (
     AppointmentSerializer,
     ConversationSerializer,
