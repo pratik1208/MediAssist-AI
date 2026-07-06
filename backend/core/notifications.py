@@ -28,6 +28,8 @@ provider = ConsoleProvider()
 
 # Very simple template store. Real templates (with translations) come later.
 _TEMPLATES: dict[str, str] = {
+    "appointment_booked": "Hi {name}, your appointment with Dr. {doctor} is confirmed for {start}.",
+    "appointment_cancelled": "Hi {name}, your appointment on {start} has been cancelled.",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 

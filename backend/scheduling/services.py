@@ -2,7 +2,20 @@ from datetime import datetime, timedelta
 
 from django.db import transaction
 
+from core.events import emit
 from scheduling.models import Appointment, Waitlist
+
+
+def _emit_booked(appointment):
+    """Announce a new booking so subscribers (e.g. confirmations) can react."""
+    emit(
+        "appointment.booked",
+        appointment_id=appointment.id,
+        patient_id=appointment.patient_id,
+        doctor_id=appointment.doctor_id,
+        doctor_name=appointment.doctor.name,
+        start=appointment.start_time.isoformat(),
+    )
 
 URGENCY_RANK = {
     "high": 0,
@@ -65,7 +78,7 @@ def book_appointment(
     urgency,
 ):
 
-    return Appointment.objects.create(
+    appointment = Appointment.objects.create(
         doctor=doctor,
         patient=patient,
         start_time=start,
@@ -74,6 +87,8 @@ def book_appointment(
         reason=reason,
         urgency=urgency,
     )
+    _emit_booked(appointment)
+    return appointment
 
 
 @transaction.atomic
@@ -114,6 +129,7 @@ def promote_next_waitlisted(
     patient.status = "booked"
     patient.save()
 
+    _emit_booked(appointment)
     return appointment
 
 
@@ -122,6 +138,14 @@ def cancel_appointment(appointment):
 
     appointment.status = "cancelled"
     appointment.save()
+
+    emit(
+        "appointment.cancelled",
+        appointment_id=appointment.id,
+        patient_id=appointment.patient_id,
+        doctor_name=appointment.doctor.name,
+        start=appointment.start_time.isoformat(),
+    )
 
     promote_next_waitlisted(
         appointment.doctor,
