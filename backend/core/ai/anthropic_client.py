@@ -13,16 +13,21 @@ client = Anthropic()  # reads ANTHROPIC_API_KEY
 
 
 def _clean_tool(tool: dict) -> dict:
-    """Anthropic tools accept only name/description/input_schema.
+    """Keep only the tool keys Anthropic understands.
 
-    Our canonical strict_tool() adds a "strict" key (useful for OpenAI); strip
-    anything Anthropic doesn't understand.
+    "strict" is passed through: the Claude API supports strict tool use
+    natively (the schema needs additionalProperties: false + required,
+    which strict_tool() already sets), guaranteeing tool inputs validate
+    exactly against the schema.
     """
-    return {
+    cleaned = {
         "name": tool["name"],
         "description": tool["description"],
         "input_schema": tool["input_schema"],
     }
+    if tool.get("strict"):
+        cleaned["strict"] = True
+    return cleaned
 
 
 @traceable(name="call_tool", run_type="llm")

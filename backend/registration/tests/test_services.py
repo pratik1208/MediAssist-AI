@@ -18,19 +18,8 @@ from registration.services import (
     verify_otp,
 )
 
-DOB = datetime.date(1990, 5, 17)
+DOB = datetime.date(1990, 5, 17)  # matches the shared `rahul` fixture in conftest.py
 OTHER_DOB = datetime.date(1985, 1, 2)
-
-
-@pytest.fixture
-def rahul(db):
-    return Patient.objects.create(
-        first_name="Rahul",
-        last_name="Sharma",
-        contact_number="+91 98765 43210",
-        dob=DOB,
-        registration_status="complete",
-    )
 
 
 class TestNormalizePhone:
