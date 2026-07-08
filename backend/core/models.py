@@ -131,7 +131,9 @@ class Conversation(models.Model):
         ("voice", "Voice"),
     ]
     id = models.AutoField(primary_key=True)
-    patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
+    # Null until the patient is identified — a registration conversation
+    # starts before we know who is talking (linked once demographics land).
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, null=True, blank=True)
     channel = models.CharField(
         max_length=20,
         choices=CHANNEL_CHOICES,
@@ -149,6 +151,8 @@ class Conversation(models.Model):
         db_table = "patient_conversation"
 
     def __str__(self):
+        if self.patient is None:
+            return f"Conversation {self.id} (patient not yet identified)"
         return f"Conversation {self.id} with {self.patient.first_name} {self.patient.last_name}"
 
 class Message(models.Model):

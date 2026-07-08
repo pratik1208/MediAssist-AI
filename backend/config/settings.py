@@ -131,6 +131,11 @@ CORS_ALLOWED_ORIGINS = []
 
 STATIC_URL = "static/"
 
+# Uploaded patient documents (insurance cards, IDs, ...) land here in dev;
+# swap for a storage bucket via django-storages in prod.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 
 os.environ["LANGSMITH_TRACING"] = "true"
 os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
