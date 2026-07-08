@@ -37,7 +37,7 @@ def subscribe(event_name: str):
         return fn
     return register
 
-
+# emit() announces that an event happened, saves it in the database, runs every function that subscribed to that event, records any failures, and then marks the event as processed.
 def emit(event_name: str, **payload):
     """Record the event, then call every subscribed handler.
 

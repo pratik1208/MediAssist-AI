@@ -90,7 +90,7 @@ def book_appointment(
     _emit_booked(appointment)
     return appointment
 
-
+# Either everything succeeds or everything is rolled back.
 @transaction.atomic
 def promote_next_waitlisted(
     doctor,
