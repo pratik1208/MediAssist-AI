@@ -51,6 +51,7 @@ class Appointment(models.Model):
         indexes = [
             models.Index(fields=["doctor", "start_time"]),
         ]
+        db_table = "appointment"
 
     def __str__(self):
         return f"Appointment with Dr. {self.doctor.name} for {self.patient} on {self.start_time}"
@@ -82,6 +83,7 @@ class Waitlist(models.Model):
             # Promotion query: find the next waiting patient for a doctor.
             models.Index(fields=["doctor", "status", "urgency", "created_at"]),
         ]
+        db_table = "waitlist"
 
     def __str__(self):
         return f"Waitlist ({self.status}) for {self.patient} — {self.specialty}"

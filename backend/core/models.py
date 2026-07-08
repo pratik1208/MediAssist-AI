@@ -25,6 +25,9 @@ class Specialty(models.TextChoices):
     ALLERGY_IMMUNOLOGY = "Allergy & Immunology", "Allergy & Immunology"
     EMERGENCY_MEDICINE = "Emergency Medicine", "Emergency Medicine"
 
+    class Meta:
+        db_table = "patient_specialty"
+
 
 class Patient(models.Model):
     LANGUAGE_CHOICES = [
@@ -86,6 +89,8 @@ class Patient(models.Model):
                     }
                     """,
                     )
+    class Meta:
+        db_table = "patient"
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}".strip()
@@ -107,6 +112,9 @@ class Doctor(models.Model):
         help_text='["2026-01-01", "2026-08-15", "2026-12-25"]',
     )
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "doctor"
 
     def __str__(self):
         return self.name
@@ -136,6 +144,11 @@ class Conversation(models.Model):
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        db_table = "patient_conversation"
+
+    def __str__(self):
+        return f"Conversation {self.id} with {self.patient.first_name} {self.patient.last_name}"
 
 class Message(models.Model):
     id = models.AutoField(primary_key=True)
@@ -147,6 +160,12 @@ class Message(models.Model):
         blank=True,
         help_text='Scratch state passed between agents, e.g. {"intent_stack": ["book_appointment"], "verified": false, "active_agent": "scheduling"}',
     )
+    class Meta:
+        db_table = "patient_message"
+
+    def __str__(self):
+        return f"Message {self.id} in Conversation {self.conversation.id} ({self.role})"
+
 
 class OTPChallenge(models.Model):
     id = models.AutoField(primary_key=True)
@@ -158,6 +177,13 @@ class OTPChallenge(models.Model):
     max_attempts = models.PositiveSmallIntegerField(default=5, help_text="Maximum allowed verification attempts.")
     consumed_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when the code was successfully used. Null if unused.")
 
+    class Meta:
+        db_table = "patient_otpchallenge"
+    
+    def __str__(self):
+        return f"OTPChallenge {self.id} for Patient {self.patient.first_name} {self.patient.last_name} via {self.channel}"
+
+
 class SentNotification(models.Model):
     id = models.AutoField(primary_key=True)
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
@@ -167,7 +193,11 @@ class SentNotification(models.Model):
     status = models.CharField(max_length=10, choices=[("queued", "queued"), ("sent", "sent"),("delivered", "delivered"),("failed","failed")])
     provider_message_id = models.CharField(max_length=100, null=True, blank=True, help_text="Message ID returned by the external notification provider.")
 
+    class Meta:
+        db_table = "patient_sentnotification"
 
+    def __str__(self):
+        return f"SentNotification {self.id} to Patient {self.patient.first_name} {self.patient.last_name} via {self.channel}"
 class AuditEvent(models.Model):
     id = models.AutoField(primary_key=True)
     actor_type = models.CharField(
@@ -185,6 +215,12 @@ class AuditEvent(models.Model):
     payload = models.JSONField(default=dict, blank=True, help_text="Extra detail about the event, e.g. old/new values, reason, target object ids.")
     created_at = models.DateTimeField(auto_now_add=True, help_text="When the event occurred. Set once at creation and never changes.")
 
+    class Meta:
+        db_table = "patient_auditevent"
+    
+    def __str__(self):
+        return f"AuditEvent {self.id} by {self.actor_type} {self.actor_id} for Patient {self.patient.first_name} {self.patient.last_name}: {self.action}"
+
 
 class EventLog(models.Model):
     id = models.AutoField(primary_key=True)
@@ -192,3 +228,9 @@ class EventLog(models.Model):
     payload = models.JSONField(default=dict, blank=True, help_text="Event data passed to subscribers.")
     processed = models.BooleanField(default=False, help_text="Whether all subscribers have handled this event.")
     error = models.TextField(null=True, blank=True, help_text="Subscriber failure detail, if processing failed. Null on success.")
+
+    class Meta:
+        db_table = "event_log"
+
+    def __str__(self):
+        return f"EventLog {self.id}: {self.name} (processed={self.processed})"
