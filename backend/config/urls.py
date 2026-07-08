@@ -26,6 +26,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/token", TokenObtainPairView.as_view()),
     path("api/token/refresh", TokenRefreshView.as_view()),
+    path("api/", include("core.urls")),
     path("api/", include("scheduling.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("scalar/", include("django_scalar.urls")),
