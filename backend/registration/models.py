@@ -5,6 +5,7 @@ from core.models import Patient
 class InsurancePolicy(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
     policy_number = models.CharField(max_length=100)
+    member_id = models.CharField(max_length=100, null=True, blank=True)
     provider_name = models.CharField(max_length=100)
     coverage_details = models.TextField()
     coverage_start = models.DateField()
@@ -57,6 +58,7 @@ class UploadedDocument(models.Model):
         choices=EXTRACTION_STATUS_CHOICES,
         default="pending"
     )
+    extracted_data = models.JSONField(null=True, blank=True, help_text="Structured fields read from the document by the AI, e.g. policy number, provider name, test results.")
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 

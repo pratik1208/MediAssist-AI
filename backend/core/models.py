@@ -77,6 +77,7 @@ class Patient(models.Model):
     preferred_language = models.CharField(max_length=10, choices=LANGUAGE_CHOICES, default="en")
     preferred_pharmacy = models.CharField(max_length=255, null=True, blank=True)
     registration_status = models.CharField(max_length=20, choices=REGISTRATION_CHOICES)
+    identity_verified = models.BooleanField(default=False)
     communication_preferences = models.JSONField(
         default=dict,
         blank=True,

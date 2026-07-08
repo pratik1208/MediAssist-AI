@@ -4,11 +4,10 @@ from scheduling.models import (
     Appointment,
     Waitlist,
 )
-from core.models import Message, Patient, Doctor, Conversation
-
 # Register your models here.
+# Patient, Doctor, Conversation, Message are registered in core/admin.py
 
-django_admin.site.register([Doctor, Patient, Appointment, Waitlist, Conversation, Message])
+django_admin.site.register([Appointment, Waitlist])
 
 
 @django_admin.action(description="Cancel and promote waitlist")
