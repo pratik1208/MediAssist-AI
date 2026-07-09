@@ -124,6 +124,35 @@ class TestDemographics:
         assert response.status_code == 400
         assert "contact_number" in response.json()["error"]
 
+    def test_duplicate_hold_is_recorded_on_the_conversation(self, client, db):
+        # The chat state gate and the duplicates_prevented analytics both
+        # read duplicate_candidate_ids from agent_context.
+        token1 = start_session(client)["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token1)
+        session2 = start_session(client)
+        lookalike = {**DEMOGRAPHICS, "last_name": "Sharme", "contact_number": "9000000000"}
+        post_json(client, "/api/registration/demographics", lookalike,
+                  session2["session_token"])
+        ctx = Conversation.objects.get(id=session2["conversation_id"]).agent_context
+        assert ctx["duplicate_candidate_ids"] == [Patient.objects.get().id]
+        assert ctx["registration_stage"] == "duplicate_hold"
+
+
+class TestOtpChannel:
+    def test_channel_is_case_insensitive(self, client, db):
+        token = start_session(client)["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token)
+        response = post_json(client, "/api/registration/otp/request",
+                             {"channel": "sms"}, token)
+        assert response.status_code == 202
+
+    def test_unknown_channel_is_still_rejected(self, client, db):
+        token = start_session(client)["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token)
+        response = post_json(client, "/api/registration/otp/request",
+                             {"channel": "carrier_pigeon"}, token)
+        assert response.status_code == 400
+
 
 class TestFullRegistrationFlow:
     def test_a_patient_registers_end_to_end_with_zero_ai(self, client, db, settings, tmp_path):

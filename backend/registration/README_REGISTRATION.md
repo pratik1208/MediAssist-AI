@@ -8,6 +8,8 @@ record it creates.
 
 Spec: `specifications/SPEC_Agent_2_Registration_Intake.md`
 Build plan: `steps/BUILD_STEPS_Agent_2_Registration_Intake.md`
+New to the code? Start with `ai/HANDLER_EXPLAINED.md` — a beginner-friendly,
+from-zero walkthrough of the conversation handler.
 
 ---
 

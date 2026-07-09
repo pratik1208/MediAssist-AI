@@ -127,6 +127,14 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
             full_name, request.data["dob"], request.data["contact_number"]
         )
         if match == "possible_duplicate":
+            # Record the hold on the conversation, matching what the chat
+            # handler does — the chat state gate and the duplicates_prevented
+            # analytics both read duplicate_candidate_ids from agent_context.
+            ctx = self.conversation.agent_context or {}
+            ctx["duplicate_candidate_ids"] = [p.id for p in candidates]
+            ctx["registration_stage"] = "duplicate_hold"
+            self.conversation.agent_context = ctx
+            self.conversation.save(update_fields=["agent_context"])
             return Response(
                 {"match": "possible_duplicate",
                  "detail": "a similar patient exists; staff must resolve before continuing",
@@ -154,11 +162,13 @@ class RequestOtpAPIView(RegistrationSessionAPIView):
         if error:
             return error
 
-        channel = request.data.get("channel", "SMS")
-        valid_channels = {value for value, _ in OTPChallenge._meta.get_field("channel").choices}
-        if channel not in valid_channels:
+        # Channel choices are stored as e.g. "SMS"/"email"; accept any casing.
+        by_lower = {value.lower(): value
+                    for value, _ in OTPChallenge._meta.get_field("channel").choices}
+        channel = by_lower.get(str(request.data.get("channel", "SMS")).lower())
+        if channel is None:
             return Response(
-                {"error": f"channel must be one of {sorted(valid_channels)}"},
+                {"error": f"channel must be one of {sorted(by_lower.values())}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if channel == "email" and not patient.email:
@@ -339,6 +349,47 @@ STAGE_REPLY_GUIDANCE = {
 }
 
 
+# Demographic fields the chat model should treat as already collected when
+# they exist on the patient record (they may have arrived via the REST
+# endpoints rather than the chat itself).
+ON_FILE_FIELDS = (
+    ("first_name", "first name"),
+    ("last_name", "last name"),
+    ("dob", "date of birth"),
+    ("contact_number", "phone number"),
+    ("email", "email address"),
+    ("address", "home address"),
+    ("emergency_contact", "emergency contact"),
+    ("preferred_language", "preferred language"),
+    ("preferred_pharmacy", "preferred pharmacy"),
+)
+
+
+def on_file_context(conversation):
+    """A context message telling the model what the clinic already has.
+
+    Data can enter through the REST endpoints (demographics form, insurance
+    upload) and is then invisible in the chat history — without this note the
+    model re-asks for it and never considers the demographics collected.
+    Returned as the first history message, or None when nothing is on file.
+    """
+    patient = conversation.patient
+    if patient is None:
+        return None
+    on_file = [label for field, label in ON_FILE_FIELDS if getattr(patient, field, None)]
+    if patient.identity_verified:
+        on_file.append("verified identity")
+    if InsurancePolicy.objects.filter(patient=patient).exists():
+        on_file.append("insurance policy")
+    note = (
+        "[Clinic system note — this is context, not the patient speaking. "
+        f"The patient's name on file is {patient.first_name}. The clinic "
+        "already has the following on file; treat them as collected, never "
+        f"re-ask for them: {', '.join(on_file)}.]"
+    )
+    return {"role": "user", "content": note}
+
+
 class RegistrationChatAPIView(RegistrationSessionAPIView):
     """POST /api/registration/chat — {message} -> SSE stream (spec API table).
 
@@ -361,6 +412,11 @@ class RegistrationChatAPIView(RegistrationSessionAPIView):
                 conversation=conversation, role__in=["Patient", "Assistant"]
             ).order_by("id")
         ]
+        # Rebuilt fresh each turn (never persisted as a Message), so it always
+        # reflects the current record.
+        context_note = on_file_context(conversation)
+        if context_note:
+            history.insert(0, context_note)
 
         result = handle_registration_message(conversation, history)
         topic = result.get("next_question_topic") or "whatever is still missing"

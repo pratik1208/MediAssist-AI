@@ -73,6 +73,19 @@ class TestRegistrationChat:
             "first", "Hello! What's your name?", "second",
         ]
 
+    def test_on_file_data_is_injected_into_the_history(self, client, rahul):
+        # Demographics submitted via the REST endpoint are invisible in the
+        # chat history; a context note must tell the model not to re-ask.
+        session = start_session(client)
+        Conversation.objects.filter(id=session["conversation_id"]).update(patient=rahul)
+        _, _, handler = chat(client, session["session_token"], message="hello")
+        history = handler.call_args.args[1]
+        note = history[0]["content"]
+        assert note.startswith("[Clinic system note")
+        assert "date of birth" in note and "phone number" in note
+        assert "Rahul" in note
+        assert history[1] == {"role": "user", "content": "hello"}
+
 
 class TestRegistrationCompletedWiring:
     def test_completion_notifies_the_patient_to_book(self, rahul):

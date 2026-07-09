@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "core",
     "scheduling",
     "registration",
+    "triage",
 ]
 
 MIDDLEWARE = [
