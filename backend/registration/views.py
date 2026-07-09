@@ -6,12 +6,15 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import json
-from scheduling.ai.handler import handle_patient_message
+from core.ai import stream_reply
 from core.base_crud_views import BaseCRUDAPIView
-from core.models import Conversation, OTPChallenge
+from core.models import Conversation, Message, OTPChallenge, Patient
+from registration.ai.handler import handle_registration_message
+from registration.ai.prompts import REGISTRATION_SYSTEM_PROMPT
 from registration.models import InsurancePolicy, IntakeSummary, UploadedDocument
 from registration import services
 
@@ -319,17 +322,106 @@ class CompleteRegistrationAPIView(RegistrationSessionAPIView):
         return Response({"registration_status": "complete", "event_id": event.id})
 
 
-class ChatAPIView(APIView):
+# What the assistant's next visible message should do, per stage. The stage
+# comes from the state gate in handle_registration_message — the model never
+# decides it.
+STAGE_REPLY_GUIDANCE = {
+    "demographics": "Continue collecting demographics. Ask exactly ONE question, about: {topic}.",
+    "duplicate_hold": "Tell the patient a very similar record already exists and a staff member "
+                      "will review it before their registration continues. Do not re-ask their details.",
+    "identity_verification": "Tell the patient a 6-digit verification code is being sent to their "
+                             "phone, and ask them to type it into the code box shown on screen.",
+    "insurance": "Ask the patient to upload a photo of their insurance card with the upload button, "
+                 "or to tell you their provider name and policy number.",
+    "intake": "Continue the medical intake. Ask exactly ONE question, about: {topic}.",
+    "done": "Tell the patient their registration is complete and a clinician will review their "
+            "information. Offer to help book an appointment next.",
+}
+
+
+class RegistrationChatAPIView(RegistrationSessionAPIView):
+    """POST /api/registration/chat — {message} -> SSE stream (spec API table).
+
+    Two model calls per turn: handle_registration_message extracts data and
+    picks the stage, then stream_reply writes the patient-visible answer,
+    streamed as SSE. The final SSE event carries stage/ui_hints so the
+    frontend can show the OTP box or upload button.
+    """
 
     def post(self, request):
-        conversation = request.data.get("conversation", [])
+        text = (request.data.get("message") or "").strip()
+        if not text:
+            return Response({"error": "message is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = handle_patient_message(conversation)
+        conversation = self.conversation
+        Message.objects.create(conversation=conversation, role="Patient", content=text)
+        history = [
+            {"role": "user" if m.role == "Patient" else "assistant", "content": m.content}
+            for m in Message.objects.filter(
+                conversation=conversation, role__in=["Patient", "Assistant"]
+            ).order_by("id")
+        ]
+
+        result = handle_registration_message(conversation, history)
+        topic = result.get("next_question_topic") or "whatever is still missing"
+        guidance = STAGE_REPLY_GUIDANCE[result["stage"]].format(topic=topic)
 
         def event_stream():
-            yield f"data: {json.dumps(result, cls=DjangoJSONEncoder)}\n\n"
+            parts = []
+            for delta in stream_reply(
+                system=REGISTRATION_SYSTEM_PROMPT
+                + "\n\nInstruction for your next message: " + guidance,
+                messages=history,
+            ):
+                parts.append(delta)
+                yield f"data: {json.dumps({'delta': delta})}\n\n"
+            Message.objects.create(
+                conversation=conversation, role="Assistant", content="".join(parts)
+            )
+            meta = {key: result[key] for key in
+                    ("stage", "ui_hints", "registration_complete", "patient_id")}
+            yield f"data: {json.dumps({'done': True, **meta}, cls=DjangoJSONEncoder)}\n\n"
 
-        return StreamingHttpResponse(
-            event_stream(),
-            content_type="text/event-stream",
-        )
+        return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+
+
+class RegistrationAnalyticsAPIView(APIView):
+    """GET /api/staff/registration/analytics — FR-R10 aggregates (staff only)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        total = Patient.objects.count()
+        completed = Patient.objects.filter(registration_status="complete").count()
+        otp_total = OTPChallenge.objects.count()
+        otp_verified = OTPChallenge.objects.filter(consumed_at__isnull=False).count()
+
+        def rate(part, whole):
+            return round(part / whole, 3) if whole else None
+
+        return Response({
+            "patients": {
+                "total": total,
+                "completed": completed,
+                "completion_rate": rate(completed, total),
+                "identity_verified": Patient.objects.filter(identity_verified=True).count(),
+            },
+            "otp": {
+                "challenges_sent": otp_total,
+                "verified": otp_verified,
+                "verification_success_rate": rate(otp_verified, otp_total),
+            },
+            "duplicates_prevented": Conversation.objects.filter(
+                agent_context__has_key="duplicate_candidate_ids"
+            ).count(),
+            "insurance": {
+                "policies": InsurancePolicy.objects.count(),
+                "ineligible_flagged": InsurancePolicy.objects.filter(
+                    eligibility_status="ineligible"
+                ).count(),
+            },
+            "documents": {
+                "uploaded": UploadedDocument.objects.count(),
+                "extracted": UploadedDocument.objects.filter(extraction_status="done").count(),
+            },
+        })

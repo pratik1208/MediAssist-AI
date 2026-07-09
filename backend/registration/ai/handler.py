@@ -122,6 +122,13 @@ def handle_registration_message(conversation: Conversation, conversation_history
         if ctx.get("intake"):
             services.create_or_update_patient_record(patient, intake=ctx["intake"])
         services.complete_registration(patient)
+        # Hand the conversation to scheduling without re-asking identity
+        # (PRD User Journey steps 4-5).
+        ctx["active_agent"] = "scheduling"
+        ctx["handoff"] = {
+            "from": "registration",
+            "symptoms": ctx.get("intake", {}).get("symptoms", []),
+        }
         stage = "done"
 
     ctx["registration_stage"] = stage

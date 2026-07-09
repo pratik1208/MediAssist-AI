@@ -134,6 +134,10 @@ class TestStateGate:
         assert EventLog.objects.filter(
             name="registration.completed", payload__patient_id=rahul.id
         ).exists()
+        # Conversation handed off to scheduling, carrying the symptoms.
+        conversation.refresh_from_db()
+        assert conversation.agent_context["active_agent"] == "scheduling"
+        assert conversation.agent_context["handoff"]["symptoms"] == ["cough"]
 
     def test_chat_dictated_insurance_is_stashed_for_the_policy_writers(self, conversation, rahul):
         self._linked(conversation, rahul, verified=True)

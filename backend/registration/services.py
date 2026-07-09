@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 from django.db import transaction
 from django.utils import timezone
 
+from core.events import emit
 from core.models import AuditEvent, EventLog, OTPChallenge, Patient, SentNotification
 from registration.eligibility import EligibilityResult, PayerEligibilityGateway, default_gateway
 from registration.models import InsurancePolicy, IntakeSummary
@@ -246,17 +247,15 @@ def create_or_update_patient_record(
 def complete_registration(patient: Patient) -> EventLog:
     """Flip the patient to complete and emit registration.completed (FR-R9).
 
-    At this stage 'emit' means writing an EventLog row (ORCHESTRATION.md
-    -> Event dispatch, Stage 1). Downstream wiring — scheduling offering
-    a booking — subscribes to this event in Phase 6.
+    Emitted through core.events, so every subscriber runs (scheduling
+    offers a booking — see scheduling/apps.py) and a durable EventLog row
+    is written either way.
     """
     patient.registration_status = "complete"
     patient.save(update_fields=["registration_status"])
     _audit(patient, "registration.completed", {})
-    return EventLog.objects.create(
-        name="registration.completed",
-        payload={
-            "patient_id": patient.id,
-            "identity_verified": patient.identity_verified,
-        },
+    return emit(
+        "registration.completed",
+        patient_id=patient.id,
+        identity_verified=patient.identity_verified,
     )

@@ -22,6 +22,13 @@ class SchedulingConfig(AppConfig):
                     {"name": patient.first_name, "doctor": doctor_name, "start": start},
                 )
 
+        @subscribe("registration.completed")
+        def _offer_booking_after_registration(patient_id, **_):
+            """Registration finished -> invite the patient to book (PRD journey 4-5)."""
+            patient = Patient.objects.filter(id=patient_id).first()
+            if patient:
+                notify(patient, "registration_complete", {"name": patient.first_name})
+
         @subscribe("appointment.cancelled")
         def _send_cancellation_notice(patient_id, start=None, **_):
             """Let the patient know when their appointment is cancelled."""

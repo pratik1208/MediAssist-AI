@@ -30,6 +30,7 @@ provider = ConsoleProvider()
 _TEMPLATES: dict[str, str] = {
     "appointment_booked": "Hi {name}, your appointment with Dr. {doctor} is confirmed for {start}.",
     "appointment_cancelled": "Hi {name}, your appointment on {start} has been cancelled.",
+    "registration_complete": "Hi {name}, your registration is complete! You can now book an appointment — just tell us your symptoms or a preferred time.",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 
