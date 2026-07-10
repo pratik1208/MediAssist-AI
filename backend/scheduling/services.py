@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from django.db import transaction
+from django.utils import timezone
 
 from core.events import emit
 from scheduling.models import Appointment, Waitlist
@@ -39,13 +40,35 @@ def generate_blocks(working_start, working_end, date):
     return blocks
 
 
+WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
 def find_available_slots(doctor, date_from, date_to):
 
-    candidates = generate_blocks(
-        doctor.working_hours_start,
-        doctor.working_hours_end,
-        date_from.date(),
-    )
+    # Doctor.working_hours is per-day JSON, e.g.
+    # {"mon": [["09:00", "17:00"]], ...} — build candidate blocks for every
+    # working window that falls inside [date_from, date_to].
+    candidates = []
+    day = date_from.date()
+    while day <= date_to.date():
+        if day.isoformat() not in (doctor.holidays or []):
+            windows = (doctor.working_hours or {}).get(WEEKDAY_KEYS[day.weekday()], [])
+            for window_start, window_end in windows:
+                candidates += generate_blocks(
+                    datetime.strptime(window_start, "%H:%M").time(),
+                    datetime.strptime(window_end, "%H:%M").time(),
+                    day,
+                )
+        day += timedelta(days=1)
+
+    # Django's clock, not the OS clock — must agree with the timezone the
+    # timeframe parser used to build the candidate days.
+    now = timezone.localtime().replace(tzinfo=None)
+    candidates = [
+        (start, end)
+        for start, end in candidates
+        if start >= date_from and end <= date_to and start > now
+    ]
 
     booked = Appointment.objects.filter(
         doctor=doctor,

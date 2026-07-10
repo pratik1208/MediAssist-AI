@@ -52,7 +52,19 @@ def handle_patient_message(conversation_history):
             "type": "clarification",
             "message": ("When would you like to schedule your appointment? " "For example: today, tomorrow morning, or tomorrow afternoon."),
         }
-    date_from, date_to = parse_preferred_timeframe(preferred_timeframe)
+    try:
+        date_from, date_to = parse_preferred_timeframe(preferred_timeframe)
+    except ValueError:
+        # A phrasing the parser can't place must become a question,
+        # never a 500 to the patient.
+        return {
+            "type": "clarification",
+            "message": (
+                "I couldn't quite work out when you'd like to come in. "
+                "Could you say something like 'today', 'tomorrow morning', "
+                "or a day of the week, e.g. 'Monday afternoon'?"
+            ),
+        }
     # Step 4: Find doctors for the specialty
     doctors = Doctor.objects.filter(specialty=intent.get("specialty"))
 

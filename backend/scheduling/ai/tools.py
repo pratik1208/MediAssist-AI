@@ -44,7 +44,11 @@ EXTRACT_BOOKING_INTENT_TOOL = {
         "required": [
             "symptom",
             "urgency",
+            # Without specialty the doctor lookup filters on None and always
+            # returns "no doctors" — the model must commit to a specialty.
+            "specialty",
             "needs_clarification",
         ],
     },
 }
+

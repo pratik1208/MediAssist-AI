@@ -121,7 +121,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+# The clinic's local timezone: "today"/"tomorrow" in patient messages and
+# doctor working hours are interpreted in this zone (storage stays UTC).
+TIME_ZONE = "Asia/Kolkata"
 
 USE_I18N = True
 
