@@ -31,6 +31,10 @@ _TEMPLATES: dict[str, str] = {
     "appointment_booked": "Hi {name}, your appointment with Dr. {doctor} is confirmed for {start}.",
     "appointment_cancelled": "Hi {name}, your appointment on {start} has been cancelled.",
     "registration_complete": "Hi {name}, your registration is complete! You can now book an appointment — just tell us your symptoms or a preferred time.",
+    "refill_paused": "Hi {name}, your refill request for {medication} is on hold: {reason}. We'll help you resolve this — reply here or call the clinic.",
+    "refill_sent": "Hi {name}, your refill for {medication} was approved and sent to {pharmacy}.",
+    "refill_ready": "Hi {name}, your {medication} is ready for pickup at {pharmacy}.",
+    "refill_rejected": "Hi {name}, your refill request for {medication} was not approved: {reason}. Please contact the clinic to discuss next steps.",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 

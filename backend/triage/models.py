@@ -46,7 +46,9 @@ class TriageAssessment(models.Model):
 
 
 class EscalationAlert(models.Model):
-    assessment = models.ForeignKey(TriageAssessment, on_delete=models.CASCADE)
+    # Nullable: other agents (e.g. refills, controlled substances) raise
+    # alerts without a triage assessment; source_agent says who raised it.
+    assessment = models.ForeignKey(TriageAssessment, on_delete=models.CASCADE, null=True, blank=True)
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
     source_agent = models.CharField(max_length=100, help_text="The agent (human or AI) that generated the escalation alert.")
     category = models.CharField(
