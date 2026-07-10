@@ -40,9 +40,10 @@ class UploadedDocumentCRUDAPIView(BaseCRUDAPIView):
     serializer_class = UploadedDocumentSerializer
 
 
-# Salt scopes the session token: a token signed here is only accepted by
-# registration endpoints that unsign with the same salt.
-REGISTRATION_SESSION_SALT = "registration.session"
+# Session auth moved to core.sessions so other agents (triage, ...) can share
+# it; these aliases keep registration's public names stable.
+from core.sessions import SESSION_SALT as REGISTRATION_SESSION_SALT  # noqa: E402
+from core.sessions import SessionTokenAPIView as RegistrationSessionAPIView  # noqa: E402
 
 
 class StartRegistrationAPIView(APIView):
@@ -77,32 +78,6 @@ class StartRegistrationAPIView(APIView):
             {"session_token": session_token, "conversation_id": conversation.id},
             status=status.HTTP_201_CREATED,
         )
-
-
-class RegistrationSessionAPIView(APIView):
-    """Base for endpoints that require a session token from /start.
-
-    Clients send the token in an X-Session-Token header. A bad or missing
-    token gets a 401 before the endpoint's own code runs.
-    """
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        token = request.headers.get("X-Session-Token", "")
-        try:
-            payload = signing.loads(token, salt=REGISTRATION_SESSION_SALT)
-            self.conversation = Conversation.objects.get(id=payload["conversation_id"])
-        except (signing.BadSignature, Conversation.DoesNotExist):
-            raise AuthenticationFailed("missing or invalid session token")
-
-    def patient_or_error(self):
-        """The session's patient, or a 400 telling the client what to do first."""
-        if self.conversation.patient is None:
-            return None, Response(
-                {"error": "submit demographics before this step"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return self.conversation.patient, None
 
 
 class SubmitDemographicsAPIView(RegistrationSessionAPIView):
