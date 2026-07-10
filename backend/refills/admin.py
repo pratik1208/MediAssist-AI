@@ -1,3 +1,5 @@
 from django.contrib import admin
 
-# Register your models here.
+from refills.models import Pharmacy, Prescription, RefillRequest
+
+admin.site.register([Pharmacy, Prescription, RefillRequest])
