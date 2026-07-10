@@ -34,6 +34,8 @@ RED_FLAG_PATTERNS = [
     r"(want|going|plan(ning)?) to (die|hurt myself|harm myself)",
     r"self.?harm",
     # consciousness / neuro
+    r"worst (headache|head pain) of (my|his|her|their) life",
+    r"never had a (headache|head pain) this bad",
     r"unconscious|unresponsive|won'?t wake up",
     r"seizure|convuls",
     r"passed out|blacked out|fainted and",

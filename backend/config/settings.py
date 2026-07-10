@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "scheduling",
     "registration",
     "triage",
+    "refills",
 ]
 
 MIDDLEWARE = [

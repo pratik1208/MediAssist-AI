@@ -31,6 +31,8 @@ EMERGENCY_PHRASES = [
     "I am going to kill myself",
     "I want to hurt myself",
     # consciousness / neuro
+    "this is the worst headache of my life",
+    "I have never had a headache this bad",
     "my son is unconscious",
     "she is unresponsive and won't wake up",
     "he had a seizure a few minutes ago",

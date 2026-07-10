@@ -230,14 +230,20 @@ def escalate(assessment, category: str = "emergency") -> EscalationAlert:
     """Emergency path: create the alert, page on-call, mark the assessment.
 
     Called whenever red_flag_check() fires or the model reports
-    emergency_detected. The summary is whatever the assessment holds so far —
-    Phase 3's generate_triage_summary() will replace it with the AI-written
-    clinical paragraph.
+    emergency_detected. The alert summary is the AI-written clinician
+    hand-off when it can be generated — but an AI failure must NEVER delay
+    an emergency alert, so any exception falls back to the deterministic
+    text.
     """
-    summary = assessment.summary_text or (
-        f"Red-flag escalation. Reported: {assessment.reported_symptoms}. "
-        f"Findings so far: {assessment.findings}"
-    )
+    try:
+        from triage.ai import generate_triage_summary  # local: avoids cycle
+        summary = generate_triage_summary(assessment)["summary_text"]
+    except Exception:
+        log.exception("summary generation failed; using deterministic fallback")
+        summary = assessment.summary_text or (
+            f"Red-flag escalation. Reported: {assessment.reported_symptoms}. "
+            f"Findings so far: {assessment.findings}"
+        )
     alert = EscalationAlert.objects.create(
         assessment=assessment,
         patient=assessment.patient,
