@@ -8,6 +8,7 @@ from triage.views import (
     EscalationListAPIView,
     StartAssessmentAPIView,
     SubmitAnswerAPIView,
+    TriageAnalyticsAPIView,
     TriageAssessmentCRUDAPIView,
 )
 

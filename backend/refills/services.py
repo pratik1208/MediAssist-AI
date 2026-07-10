@@ -32,6 +32,7 @@ FAILURE_EXPLANATIONS = {
     "discontinued_by_doctor": "this medication was discontinued by your doctor",
     "prescription_expired": "the prescription has expired",
     "too_early": "it is too early to refill this medication",
+    "superseded_by_renewal": "a newer prescription for this medication exists — please request against that one",
     "followup_visit_required": "a follow-up visit is needed before the next refill",
 }
 
@@ -107,6 +108,8 @@ def check_eligibility(request: RefillRequest) -> EligibilityResult:
     failures = []
     if rx.status == "discontinued":
         failures.append("discontinued_by_doctor")
+    if rx.status == "superseded":
+        failures.append("superseded_by_renewal")
     if rx.status == "expired" or rx.expiry_date < datetime.date.today():
         failures.append("prescription_expired")
     if refill_not_yet_due(rx):
@@ -283,10 +286,15 @@ def approve(request: RefillRequest, doctor) -> Prescription:
         followup_required=False,
         is_controlled_substance=template.is_controlled_substance,
     )
+    # The write-back replaces the old row: leaving it active would let the
+    # patient refill against both prescriptions.
+    template.status = "superseded"
+    template.save(update_fields=["status"])
     AuditEvent.objects.create(
         actor_type="staff", actor_id=str(doctor.id), patient=request.patient,
         action="refill.approved",
         payload={"request_id": request.id, "new_prescription_id": new_rx.id,
+                 "superseded_prescription_id": template.id,
                  "medication": new_rx.medication_name},
     )
 

@@ -225,6 +225,20 @@ class TestPhysicianDecisions:
                                          patient=patient).exists()
         assert EventLog.objects.filter(name="refill.approved").exists()
 
+    def test_approve_supersedes_the_old_prescription(self, patient, doctor, pharmacy):
+        request = self.pending_request(patient, doctor, pharmacy)
+        old_rx = request.prescription
+        services.approve(request, doctor)
+        old_rx.refresh_from_db()
+        assert old_rx.status == "superseded"
+        # a refill attempt against the old row is refused with a clear reason
+        retry = make_request(old_rx, pharmacy)
+        result = services.check_eligibility(retry)
+        assert "superseded_by_renewal" in result.failures
+        # and the matcher can no longer resolve to it
+        from refills.services import match_medication
+        assert match_medication("amlodipine", patient).status == "active"
+
     def test_reject_records_reason_and_notifies(self, patient, doctor, pharmacy):
         request = self.pending_request(patient, doctor, pharmacy)
         services.reject(request, doctor, "needs blood pressure recheck first")

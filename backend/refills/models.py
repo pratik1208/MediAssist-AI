@@ -27,6 +27,9 @@ class Prescription(models.Model):
         ("active", "Active"),
         ("discontinued", "Discontinued"),
         ("expired", "Expired"),
+        # Replaced by a newer row via refill-approval write-back: without
+        # this, both rows stay refillable (double-fill risk).
+        ("superseded", "Superseded"),
     ]
 
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, db_index=True)
