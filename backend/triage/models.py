@@ -37,6 +37,9 @@ class TriageAssessment(models.Model):
     )
     summary_text = models.TextField(help_text="A concise summary of the assessment, including presenting symptoms and findings.")
     status = models.CharField(max_length=20, choices=[("pending", "Pending"), ("completed", "Completed"), ("reviewed", "Reviewed"), ("escalated", "Escalated")], default="pending")
+    # Timestamps for the FR-T10 analytics (avg triage time).
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    finished_at = models.DateTimeField(null=True, blank=True, help_text="When the assessment completed or escalated.")
 
     class Meta:
         db_table = "triage_assessment"

@@ -223,3 +223,35 @@ class TestGenericCRUD:
         assert len(client.get("/api/pharmacy").json()) == 1
         assert len(client.get("/api/prescription").json()) == 1
         assert client.get("/api/refillrequest").json() == []
+
+
+class TestIdentityStepUp:
+    """FR-M2: an unverified session is blocked, verifies through
+    registration's OTP endpoints on the SAME session token, then proceeds."""
+
+    def test_otp_step_up_unlocks_refills(self, client, session, doctor, pharmacy):
+        from registration.tests.test_services import sent_code
+
+        patient = session["patient"]
+        patient.identity_verified = False
+        patient.save(update_fields=["identity_verified"])
+        rx = make_rx(patient, doctor)
+
+        # blocked before verification
+        blocked = post_json(client, REQUESTS_URL,
+                            {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                            session["token"])
+        assert blocked.status_code == 403
+
+        # step up via registration's OTP endpoints, same token
+        assert post_json(client, "/api/registration/otp/request",
+                         {"channel": "SMS"}, session["token"]).status_code == 202
+        verified = post_json(client, "/api/registration/otp/verify",
+                             {"code": sent_code(patient)}, session["token"])
+        assert verified.json() == {"verified": True}
+
+        # the very same refill call now succeeds
+        allowed = post_json(client, REQUESTS_URL,
+                            {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                            session["token"])
+        assert allowed.status_code == 201

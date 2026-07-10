@@ -1,3 +1,4 @@
+from core.safety import red_flag_check
 from scheduling.ai.extract import extract_intent
 from scheduling.ai.time_parser import parse_preferred_timeframe
 from scheduling.models import Doctor
@@ -14,6 +15,16 @@ def handle_patient_message(conversation_history):
     """
     Orchestrates the complete scheduling workflow.
     """
+
+    # Step 0: deterministic red-flag screen BEFORE any model call (PRD Edge
+    # Case 11) — emergency symptoms mentioned mid-scheduling must never
+    # depend on the model alone.
+    latest = conversation_history[-1]["content"] if conversation_history else ""
+    if red_flag_check(latest):
+        return {
+            "type": "emergency",
+            "message": EMERGENCY_RESPONSE,
+        }
 
     # Step 1: Extract structured intent
     intent = extract_intent(conversation_history)

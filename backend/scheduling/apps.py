@@ -39,3 +39,30 @@ class SchedulingConfig(AppConfig):
                     "appointment_cancelled",
                     {"name": patient.first_name, "start": start},
                 )
+
+        @subscribe("triage.disposition")
+        def _offer_booking_after_triage(patient_id, route_to=None,
+                                        disposition=None, **_):
+            """Triage routed the patient here -> invite booking with the
+            right urgency (FR-T7 meets FR-S2/S3)."""
+            if route_to != "scheduling":
+                return
+            patient = Patient.objects.filter(id=patient_id).first()
+            if patient:
+                notify(patient, "triage_booking_offer", {
+                    "name": patient.first_name,
+                    "urgency": {"same_day": "today",
+                                "24_48h": "within the next 24-48 hours",
+                                "routine": "at a convenient time"}.get(disposition, "soon"),
+                })
+
+        @subscribe("refill.visit_required")
+        def _offer_booking_for_refill_visit(patient_id, medication=None, **_):
+            """The physician wants a visit before refilling -> offer booking
+            (FR-M6 -> Agent 1)."""
+            patient = Patient.objects.filter(id=patient_id).first()
+            if patient:
+                notify(patient, "refill_visit_booking_offer", {
+                    "name": patient.first_name,
+                    "medication": medication or "your medication",
+                })

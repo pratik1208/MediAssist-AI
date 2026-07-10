@@ -145,6 +145,7 @@ def run_eligibility_check(request: RefillRequest) -> EligibilityResult:
     if result.failures == ["controlled_substance"]:
         request.status = "pending_approval"
         request.renewal_summary = build_renewal_summary(request)
+        request.summary_text = _physician_summary(request)
         request.save()
         return result
 
@@ -162,8 +163,24 @@ def run_eligibility_check(request: RefillRequest) -> EligibilityResult:
     request.renewal_summary = build_renewal_summary(request)
     request.renewal_summary["is_renewal"] = result.needs_new_prescription
     request.status = "pending_approval"
+    request.summary_text = _physician_summary(request)
     request.save()
     return result
+
+
+def _physician_summary(request: RefillRequest) -> str:
+    """AI one-glance summary when available; an AI outage must never keep a
+    request out of the physician queue, so failures fall back to a plain
+    deterministic line."""
+    try:
+        from refills.ai import summarize_for_physician  # local: keeps AI optional
+        return summarize_for_physician(request.renewal_summary)
+    except Exception:
+        log.exception("physician summary generation failed; using fallback")
+        summary = request.renewal_summary
+        return (f"{summary.get('medication')} — refills remaining: "
+                f"{summary.get('refills_remaining')}, adherence: "
+                f"{summary.get('adherence')}.")
 
 
 def escalate_controlled(request: RefillRequest) -> EscalationAlert:
@@ -336,3 +353,79 @@ def mark_ready_for_pickup(request: RefillRequest) -> None:
         "medication": request.prescription.medication_name,
         "pharmacy": request.pharmacy.name,
     })
+
+
+# -- medication matching (FR-M1): the model states, this code resolves -------
+
+# Small brand -> generic table; grows as real prescriptions demand.
+BRAND_TO_GENERIC = {
+    "norvasc": "amlodipine",
+    "glucophage": "metformin",
+    "lipitor": "atorvastatin",
+    "synthroid": "levothyroxine",
+    "eltroxin": "levothyroxine",
+    "cozaar": "losartan",
+    "xanax": "alprazolam",
+    "zestril": "lisinopril",
+    "prinivil": "lisinopril",
+    "crestor": "rosuvastatin",
+}
+
+# "my blood pressure meds" -> the therapeutic class; matches only when the
+# patient has exactly ONE active prescription in that class.
+THERAPEUTIC_CLASSES = {
+    "blood pressure": ["amlodipine", "losartan", "lisinopril", "telmisartan"],
+    "bp": ["amlodipine", "losartan", "lisinopril", "telmisartan"],
+    "diabetes": ["metformin", "glimepiride", "insulin"],
+    "sugar": ["metformin", "glimepiride", "insulin"],
+    "cholesterol": ["atorvastatin", "rosuvastatin", "simvastatin"],
+    "statin": ["atorvastatin", "rosuvastatin", "simvastatin"],
+    "thyroid": ["levothyroxine"],
+}
+
+# Conservative on purpose: a wrong-medication match is a patient-safety
+# failure; an unnecessary clarifying question costs one chat turn.
+FUZZY_THRESHOLD = 88
+
+
+def _normalize_med(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()).strip()
+
+
+def match_medication(stated: str, patient) -> Prescription | None:
+    """Resolve the patient's words to exactly one ACTIVE prescription.
+
+    Returns the prescription only when the match is unambiguous; 0 or >1
+    candidates return None and the caller asks a clarifying question —
+    never a guess (FR-M1)."""
+    stated_n = _normalize_med(stated)
+    if not stated_n:
+        return None
+    # translate brand names word-by-word before comparing
+    translated = " ".join(BRAND_TO_GENERIC.get(w, w) for w in stated_n.split())
+
+    from rapidfuzz import fuzz
+
+    active = list(Prescription.objects.filter(patient=patient, status="active"))
+    hits = []
+    for rx in active:
+        name = _normalize_med(rx.medication_name)
+        exact = name in translated.split() or name == translated
+        fuzzy = max(fuzz.ratio(word, name) for word in translated.split())
+        if exact or fuzzy >= FUZZY_THRESHOLD:
+            hits.append(rx)
+
+    if not hits:
+        for phrase, generics in THERAPEUTIC_CLASSES.items():
+            # Whole words only: "statin" must not match inside "rosuvastatin".
+            if re.search(rf"\b{re.escape(phrase)}\b", stated_n):
+                hits.extend(rx for rx in active
+                            if _normalize_med(rx.medication_name) in generics
+                            and rx not in hits)
+
+    # Several rows of the SAME medication (e.g. after a renewal write-back)
+    # are not ambiguity — take the newest. Different medications are.
+    names = {_normalize_med(rx.medication_name) for rx in hits}
+    if len(names) == 1 and hits:
+        return max(hits, key=lambda rx: (rx.prescribed_date, rx.id))
+    return None

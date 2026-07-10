@@ -24,7 +24,7 @@ RED_FLAG_PATTERNS = [
     r"chok(ing|ed) (on|and)",
     # stroke
     r"face\s.*(droop|numb)",
-    r"slurr(ed|ing)\s+speech",
+    r"slurr(ed|ing)\s+speech|speech\s.{0,20}slurr",
     r"one side\s.*(weak|numb|paraly)",
     r"(sudden|suddenly).*(can'?t|cannot) (see|speak|talk|move)",
     # mental health crisis

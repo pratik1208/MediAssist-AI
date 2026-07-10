@@ -35,6 +35,8 @@ _TEMPLATES: dict[str, str] = {
     "refill_sent": "Hi {name}, your refill for {medication} was approved and sent to {pharmacy}.",
     "refill_ready": "Hi {name}, your {medication} is ready for pickup at {pharmacy}.",
     "refill_rejected": "Hi {name}, your refill request for {medication} was not approved: {reason}. Please contact the clinic to discuss next steps.",
+    "triage_booking_offer": "Hi {name}, based on your assessment you should see a doctor {urgency}. Would you like me to book an appointment for you?",
+    "refill_visit_booking_offer": "Hi {name}, your doctor would like to see you before refilling {medication}. Would you like me to book an appointment?",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 

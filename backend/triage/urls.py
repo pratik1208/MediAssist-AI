@@ -15,6 +15,7 @@ urlpatterns = [
     path("triage/assessments/", StartAssessmentAPIView.as_view()),
     path("triage/assessments/<int:assessment_id>/", AssessmentDetailAPIView.as_view()),
     path("triage/assessments/<int:assessment_id>/answer/", SubmitAnswerAPIView.as_view()),
+    path("staff/triage/analytics/", TriageAnalyticsAPIView.as_view()),
     path("staff/triage/escalations/", EscalationListAPIView.as_view()),
     path("staff/triage/escalations/<int:alert_id>/ack/", EscalationAckAPIView.as_view()),
     # generic CRUD (dev/admin convenience)

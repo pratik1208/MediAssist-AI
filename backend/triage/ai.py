@@ -297,8 +297,10 @@ def handle_triage_message(assessment, conversation_history: list[dict]) -> dict:
                 "next_question": step["next_question"]}
 
     # Interview finished: rules decide, model can only have raised.
+    from django.utils import timezone
     assessment.status = "completed"
-    assessment.save(update_fields=["findings", "status"])
+    assessment.finished_at = timezone.now()
+    assessment.save(update_fields=["findings", "status", "finished_at"])
     final = services.assign_acuity(assessment)
     if final == "emergency":
         services.escalate(assessment)

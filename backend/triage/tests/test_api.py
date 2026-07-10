@@ -208,3 +208,32 @@ class TestStaffEscalations:
         assert alert.acknowledged_at is not None
         # second ack is a no-op, not an error
         assert staff_client.post(f"{self.URL}{alert.id}/ack/").json() == {"status": "acknowledged"}
+
+
+class TestAnalytics:
+    URL = "/api/staff/triage/analytics/"
+
+    def test_staff_only(self, client, db):
+        assert client.get(self.URL).status_code == 403
+
+    def test_fr_t10_aggregates(self, client, seeded, session):
+        staff = get_user_model().objects.create_user("t-staff", password="x", is_staff=True)
+
+        # one routine completion (full scripted interview)
+        start = post_json(client, START_URL, {"symptoms_text": "mild headache"},
+                          session["token"]).json()
+        for answer in ["gradually", "no, as usual", "3", "none", "no"]:
+            post_json(client, f"{START_URL}{start['id']}/answer/",
+                      {"answer": answer}, session["token"])
+        # one emergency escalation
+        post_json(client, START_URL, {"symptoms_text": "crushing chest pain"},
+                  session["token"])
+
+        client.force_login(staff)
+        body = client.get(self.URL).json()
+        assert body["assessments"]["total"] == 2
+        assert body["assessments"]["completed"] == 1
+        assert body["acuity_distribution"] == {"low": 1, "emergency": 1}
+        assert body["escalations"] == {"total": 1, "rate": 0.5}
+        assert body["avg_triage_seconds"] is not None
+        assert body["same_day"]["dispositions"] == 0

@@ -195,7 +195,9 @@ class SubmitAnswerAPIView(TriageAssessmentAPIView):
 
         # Interview finished: rules decide, then route downstream.
         assessment.status = "completed"
-        assessment.save(update_fields=["findings", "reported_symptoms", "status"])
+        assessment.finished_at = timezone.now()
+        assessment.save(update_fields=["findings", "reported_symptoms", "status",
+                                       "finished_at"])
         services.assign_acuity(assessment)
         if assessment.acuity == "emergency":
             services.escalate(assessment)
@@ -247,6 +249,56 @@ class EscalationListAPIView(APIView):
             "status": a.status,
             "acknowledged_at": a.acknowledged_at,
         } for a in alerts])
+
+
+class TriageAnalyticsAPIView(APIView):
+    """GET /api/staff/triage/analytics/ — FR-T10 aggregates (staff only)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from django.db.models import Avg, Count, F
+
+        assessments = TriageAssessment.objects.all()
+        total = assessments.count()
+        finished = assessments.exclude(finished_at=None)
+
+        acuity_distribution = {
+            row["acuity"]: row["n"]
+            for row in assessments.exclude(status="pending")
+                                  .values("acuity").annotate(n=Count("id"))
+        }
+        escalated = assessments.filter(status="escalated").count()
+        avg_time = finished.exclude(created_at=None).aggregate(
+            avg=Avg(F("finished_at") - F("created_at")))["avg"]
+
+        # Same-day conversion: patients told to be seen today who then got
+        # an appointment booked (proxy until appointments link to triage).
+        from scheduling.models import Appointment
+        same_day = assessments.filter(disposition="same_day",
+                                      status__in=("completed", "escalated"))
+        same_day_patients = set(same_day.values_list("patient_id", flat=True))
+        converted = (Appointment.objects
+                     .filter(patient_id__in=same_day_patients)
+                     .exclude(status="cancelled")
+                     .values_list("patient_id", flat=True).distinct().count()
+                     if same_day_patients else 0)
+
+        def rate(part, whole):
+            return round(part / whole, 3) if whole else None
+
+        return Response({
+            "assessments": {"total": total,
+                            "completed": assessments.filter(status="completed").count(),
+                            "pending": assessments.filter(status="pending").count()},
+            "acuity_distribution": acuity_distribution,
+            "escalations": {"total": escalated,
+                            "rate": rate(escalated, total)},
+            "avg_triage_seconds": round(avg_time.total_seconds(), 1) if avg_time else None,
+            "same_day": {"dispositions": same_day.count(),
+                         "converted_to_booking": converted,
+                         "conversion_rate": rate(converted, len(same_day_patients))},
+        })
 
 
 class EscalationAckAPIView(APIView):

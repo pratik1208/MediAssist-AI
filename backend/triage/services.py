@@ -9,6 +9,8 @@ route_disposition.
 import datetime
 import logging
 
+from django.utils import timezone
+
 from core.events import emit
 from core.safety import find_red_flags, red_flag_check  # noqa: F401
 from registration.models import IntakeSummary
@@ -257,7 +259,8 @@ def escalate(assessment, category: str = "emergency") -> EscalationAlert:
     assessment.status = "escalated"
     assessment.acuity = "emergency"
     assessment.disposition = DISPOSITION_FOR["emergency"]
-    assessment.save(update_fields=["status", "acuity", "disposition"])
+    assessment.finished_at = timezone.now()
+    assessment.save(update_fields=["status", "acuity", "disposition", "finished_at"])
 
     emit("escalation.created", alert_id=alert.id, patient_id=alert.patient_id,
          category=category)
