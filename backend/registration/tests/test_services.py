@@ -3,6 +3,7 @@ import re
 from datetime import timedelta
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 
 from core.models import AuditEvent, EventLog, Patient, SentNotification
@@ -127,6 +128,19 @@ class TestOtp:
         create_otp(rahul, "SMS")
         ok, reason = verify_otp(rahul, old_code)
         assert ok is False
+
+    @override_settings(DEBUG=True)
+    def test_dev_master_code_verifies_in_debug_mode(self, rahul):
+        # No challenge needed at all — 123456 is a dev-only shortcut.
+        ok, reason = verify_otp(rahul, "123456")
+        assert (ok, reason) == (True, "verified")
+        rahul.refresh_from_db()
+        assert rahul.identity_verified is True
+
+    def test_dev_master_code_is_rejected_when_debug_is_off(self, rahul):
+        # Tests run with DEBUG=False, i.e. production behaviour.
+        ok, reason = verify_otp(rahul, "123456")
+        assert (ok, reason) == (False, "no_active_code")
 
     def test_no_challenge_at_all(self, rahul):
         ok, reason = verify_otp(rahul, "123456")

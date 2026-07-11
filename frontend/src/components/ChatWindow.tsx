@@ -36,11 +36,13 @@ function toConversation(items: ChatItem[]): ChatMessage[] {
 
 interface Props {
   patientId: number | null
+  /** Pre-filled composer text, e.g. handed off from the triage result. */
+  initialInput?: string
 }
 
-export default function ChatWindow({ patientId }: Props) {
+export default function ChatWindow({ patientId, initialInput }: Props) {
   const [items, setItems] = useState<ChatItem[]>([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialInput ?? '')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 

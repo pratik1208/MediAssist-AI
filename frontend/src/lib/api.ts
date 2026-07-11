@@ -47,18 +47,13 @@ export const createAppointment = (body: AppointmentCreate) =>
   })
 
 /**
- * POST /api/chat and consume the SSE stream. The backend sends one or more
- * `data: {...}` events; `onEvent` fires for each parsed event as it arrives.
+ * Consume an SSE response body, firing `onEvent` with each parsed
+ * `data: {...}` event as it arrives.
  */
-export async function streamChat(
-  conversation: ChatMessage[],
-  onEvent: (event: ChatResult) => void,
+export async function readSseStream<T>(
+  response: Response,
+  onEvent: (event: T) => void,
 ): Promise<void> {
-  const response = await fetch(`${BASE_URL}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation }),
-  })
   if (!response.ok || response.body === null) {
     throw new ApiError(response.status, await response.text().catch(() => null))
   }
@@ -82,8 +77,23 @@ export async function streamChat(
         .filter((line) => line.startsWith('data: '))
         .map((line) => line.slice('data: '.length))
         .join('\n')
-      if (data) onEvent(JSON.parse(data) as ChatResult)
+      if (data) onEvent(JSON.parse(data) as T)
       boundary = buffer.indexOf('\n\n')
     }
   }
 }
+
+/** POST /api/chat (scheduling agent) and consume the SSE stream. */
+export async function streamChat(
+  conversation: ChatMessage[],
+  onEvent: (event: ChatResult) => void,
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation }),
+  })
+  await readSseStream(response, onEvent)
+}
+
+export { BASE_URL }

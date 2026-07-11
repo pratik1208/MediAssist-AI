@@ -10,6 +10,7 @@ import secrets
 from datetime import timedelta
 from difflib import SequenceMatcher
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -116,6 +117,11 @@ def create_otp(patient: Patient, channel: str) -> OTPChallenge:
     return challenge
 
 
+# Accepted for any patient while DEBUG=True, so local testing never depends
+# on reading the console. Ignored entirely in production (DEBUG=False).
+DEV_MASTER_OTP = "123456"
+
+
 def verify_otp(patient: Patient, code: str) -> tuple[bool, str]:
     """Check a code the patient typed against their latest active challenge.
 
@@ -125,6 +131,14 @@ def verify_otp(patient: Patient, code: str) -> tuple[bool, str]:
     On success the challenge is consumed (single-use) and the patient is
     marked identity_verified.
     """
+    if settings.DEBUG and code == DEV_MASTER_OTP:
+        OTPChallenge.objects.filter(
+            patient=patient, consumed_at__isnull=True
+        ).update(consumed_at=timezone.now())
+        patient.identity_verified = True
+        patient.save(update_fields=["identity_verified"])
+        return True, "verified"
+
     challenge = (
         OTPChallenge.objects.filter(patient=patient, consumed_at__isnull=True)
         .order_by("-id")

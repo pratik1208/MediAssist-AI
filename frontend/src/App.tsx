@@ -1,7 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
+import EscalationQueuePage from './pages/EscalationQueuePage'
+import RegistrationChatPage from './pages/RegistrationChatPage'
 import SchedulingChatPage from './pages/SchedulingChatPage'
+import TriageChatPage from './pages/TriageChatPage'
 
 const queryClient = new QueryClient()
 
@@ -12,6 +15,9 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/schedule" replace />} />
           <Route path="/schedule" element={<SchedulingChatPage />} />
+          <Route path="/register" element={<RegistrationChatPage />} />
+          <Route path="/triage" element={<TriageChatPage />} />
+          <Route path="/staff/escalations" element={<EscalationQueuePage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
