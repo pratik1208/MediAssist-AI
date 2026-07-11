@@ -99,7 +99,12 @@ def book_appointment(
     end,
     reason,
     urgency,
+    source="scheduling",
 ):
+    """Agent 1's one shared booking door — other agents call this directly
+    (e.g. referrals.services.book_specialist_visit) rather than duplicating
+    booking logic, tagging their own bookings via `source` (see
+    SOURCE_CHOICES)."""
 
     appointment = Appointment.objects.create(
         doctor=doctor,
@@ -109,6 +114,7 @@ def book_appointment(
         status="booked",
         reason=reason,
         urgency=urgency,
+        source=source,
     )
     _emit_booked(appointment)
     return appointment
