@@ -156,6 +156,103 @@ class TestScriptedInterview:
         assessment = TriageAssessment.objects.get(id=start["id"])
         assert assessment.status == "escalated"
 
+    def test_adult_fever_interview_completes(self, client, seeded, session):
+        # Regression: the legacy hand-made fever protocol 500'd on the first
+        # answer (no "capture" keys); the seeded replacement must run through.
+        start, final = self.drive(
+            client, session, "I have a fever and chills",
+            ["101, with a thermometer", "about a day", "none of those",
+             "no", "keeping fluids down fine"],
+        )
+        assert final["complete"] is True
+        assert final["acuity"] == "low"
+
+    def test_reworded_stiff_neck_still_ends_as_emergency(self, client, seeded, session):
+        # Round-2 live-test regression: "my neck feels stiff" (word order
+        # flipped) missed the meningitis red flag and came out low/routine.
+        start, final = self.drive(
+            client, session, "I've had a fever since this morning",
+            ["102 measured with a thermometer", "about 10 hours",
+             "my neck feels stiff and it hurts to look down", "no",
+             "keeping fluids down"],
+        )
+        assert final["acuity"] == "emergency"
+        assert EscalationAlert.objects.filter(assessment_id=start["id"]).exists()
+
+    def test_numbers_inside_sentences_are_understood(self, client, seeded, session):
+        # Round-2 live-test regression: "It's around 104 F" parsed as text,
+        # so the >=104 rule never fired and a 104° fever came out routine.
+        _, final = self.drive(
+            client, session, "I have a fever and chills",
+            ["It's around 104 F", "about half a day", "none of those",
+             "no", "fluids are fine"],
+        )
+        assert final["acuity"] == "high"
+        assert final["disposition"] == "same_day"
+
+    def test_negated_symptom_does_not_raise_acuity(self, client, seeded, session):
+        # Round-1 live-test regression: "No fever or anything else" matched
+        # the fever rule and pushed a mild headache to medium.
+        start, final = self.drive(
+            client, session, "I've had a mild headache since this afternoon",
+            ["it built up gradually over a few hours",
+             "no, it's similar to headaches I've had before",
+             "about a 3 out of 10",
+             "no fever or anything else, just the headache",
+             "no, I haven't hit my head"],
+        )
+        assert final["acuity"] == "low"
+        assert final["disposition"] == "routine"
+        assessment = TriageAssessment.objects.get(id=start["id"])
+        assert assessment.findings["severity_1_10"] == 3
+
+    def test_infant_fever_routes_pediatric_and_ends_emergency(self, client, seeded, session):
+        # Round-1 live-test regression: "my baby has a fever" landed on the
+        # ADULT protocol and skipped the <=3-months emergency rule.
+        start = post_json(client, START_URL,
+                          {"symptoms_text": "My baby has a fever, she seems warm"},
+                          session["token"]).json()
+        assert start["protocol"] == "Pediatric Fever"
+        url = f"{START_URL}{start['id']}/answer/"
+        final = None
+        for answer in ["She is 2 months old", "101.5F forehead thermometer",
+                       "about 12 hours", "a bit sleepy but drinking milk",
+                       "no rash or anything else"]:
+            final = post_json(client, url, {"answer": answer}, session["token"]).json()
+        assert final["acuity"] == "emergency"
+
+    def test_toddler_age_in_years_is_not_an_infant(self, client, seeded, session):
+        # "2 years old" must convert to 24 months, not read as 2 months.
+        start = post_json(client, START_URL,
+                          {"symptoms_text": "my child has a fever"},
+                          session["token"]).json()
+        assert start["protocol"] == "Pediatric Fever"
+        url = f"{START_URL}{start['id']}/answer/"
+        post_json(client, url, {"answer": "he is 2 years old"}, session["token"])
+        assessment = TriageAssessment.objects.get(id=start["id"])
+        assert assessment.findings["age_months"] == 24
+
+    def test_protocol_without_capture_keys_never_500s(self, client, session):
+        # Protocols are editable data; a row missing "capture" must degrade
+        # gracefully, not crash the interview.
+        from triage.models import ClinicalProtocol
+        ClinicalProtocol.objects.create(
+            name="Legacy", symptom_keywords=["wobbly knee"],
+            question_flow=[{"id": 1, "ask": "How long?"},
+                           {"id": 2, "ask": "How bad?"}],
+            disposition_rules={"default_acuity": "low"},
+            version="0.1", is_active=True,
+        )
+        start = post_json(client, START_URL, {"symptoms_text": "wobbly knee"},
+                          session["token"]).json()
+        url = f"{START_URL}{start['id']}/answer/"
+        first = post_json(client, url, {"answer": "two days"}, session["token"])
+        assert first.status_code == 200
+        assert first.json() == {"next_question": "How bad?"}
+        final = post_json(client, url, {"answer": "not too bad"}, session["token"])
+        assert final.status_code == 200
+        assert final.json()["complete"] is True
+
     def test_finished_assessment_refuses_more_answers(self, client, seeded, session):
         start, _ = self.drive(client, session, "mild headache",
                               ["gradually", "no", "2", "none", "no"])

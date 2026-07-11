@@ -7,6 +7,8 @@ input BEFORE anything else, and a hit short-circuits to the emergency
 script + escalate() — no more questions, ever (spec emergency shape).
 """
 
+import re
+
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
@@ -59,21 +61,33 @@ EXPLANATION_FOR = {
 }
 
 
-def _coerce(answer: str):
-    """Scripted answers arrive as text; rules need numbers and booleans."""
+def _coerce(answer: str, capture_key: str = ""):
+    """Scripted answers arrive as text; rules need numbers and booleans.
+
+    Patients answer in sentences, so a number anywhere in the answer counts:
+    "It's around 104 F" -> 104, "3 out of 10" -> 3 (the first number wins).
+    When the protocol expects months/hours but the patient answered in
+    years/days/weeks, the value is converted so age and duration rules fire
+    correctly ("2 years old" -> 24 months, not 2).
+    """
     text = str(answer).strip()
     lowered = text.lower()
     if lowered in ("yes", "true", "y"):
         return True
     if lowered in ("no", "false", "n"):
         return False
-    try:
-        return int(text)
-    except ValueError:
-        try:
-            return float(text)
-        except ValueError:
-            return text
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", text)
+    if not match:
+        return text
+    number = float(match.group())
+    if capture_key.endswith("_months") and "year" in lowered:
+        number *= 12
+    elif capture_key.endswith("_hours"):
+        if "day" in lowered:
+            number *= 24
+        elif "week" in lowered:
+            number *= 24 * 7
+    return int(number) if number == int(number) else number
 
 
 def _emergency_payload():
@@ -185,7 +199,9 @@ class SubmitAnswerAPIView(TriageAssessmentAPIView):
         answers = assessment.reported_symptoms.get("answers", [])
         question = flow[len(answers)]
 
-        assessment.findings[question["capture"]] = _coerce(answer)
+        # Protocols are editable data — a row missing "capture" must not 500.
+        capture_key = question.get("capture") or f"q{question.get('id', len(answers) + 1)}"
+        assessment.findings[capture_key] = _coerce(answer, capture_key)
         answers.append(answer)
         assessment.reported_symptoms["answers"] = answers
 

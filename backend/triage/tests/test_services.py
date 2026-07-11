@@ -17,6 +17,7 @@ from triage.services import (
     escalate,
     evaluate_disposition_rules,
     patient_risk_factors,
+    phrase_in_text,
     red_flag_check,
     route_disposition,
     select_protocol,
@@ -43,6 +44,20 @@ class TestSelectProtocol:
     ])
     def test_complaints_route_to_the_right_protocol(self, seeded, complaint, expected):
         assert select_protocol(complaint).name == expected
+
+    @pytest.mark.parametrize("complaint, expected", [
+        # Word order must not defeat routing (round-2 live-test regressions).
+        ("My baby has a fever, she seems warm", "Pediatric Fever"),
+        ("my child is running a fever", "Pediatric Fever"),
+        ("I have a fever and chills", "Adult Fever Protocol"),
+        ("I have pain in my chest", "Adult Chest Pain"),
+    ])
+    def test_word_order_does_not_defeat_routing(self, seeded, complaint, expected):
+        assert select_protocol(complaint).name == expected
+
+    def test_negated_symptom_does_not_route(self, seeded):
+        # "no fever" must not win over the actual complaint.
+        assert select_protocol("I have no fever, just a pounding headache").name == "Headache"
 
     def test_no_match_returns_none_not_a_wrong_protocol(self, seeded):
         assert select_protocol("I twisted my ankle playing football") is None
@@ -157,6 +172,44 @@ class TestEvaluateDispositionRules:
         assert evaluate_disposition_rules(rules, {"worst_ever": "no, similar to before"}, set()) == "low"
         assert evaluate_disposition_rules(rules, {"worst_ever": True}, set()) == "emergency"
         assert evaluate_disposition_rules(rules, {"worst_ever": False}, set()) == "low"
+
+
+class TestPhraseInText:
+    """The matcher behind contains rules and protocol keyword routing."""
+
+    @pytest.mark.parametrize("answer, phrase", [
+        ("my neck feels stiff and it hurts to look down", "stiff neck"),
+        ("I vomited twice and I think I have a fever", "fever"),
+        ("it hit me suddenly", "sudden"),
+        ("she's been vomiting all night", "vomit"),
+        ("no rash, but my neck is stiff", "stiff neck"),  # negation stays in its clause
+        ("My baby has a fever", "baby fever"),
+    ])
+    def test_matches(self, answer, phrase):
+        assert phrase_in_text(answer, phrase) is True
+
+    @pytest.mark.parametrize("answer, phrase", [
+        ("No fever or anything else, just the headache", "fever"),
+        ("no rash or stiff neck", "stiff neck"),  # negation distributes over "or"
+        ("none of those", "stiff neck"),
+        ("it's very tender, no chance of pregnancy", "pregnan"),
+        ("I don't have any confusion", "confusion"),
+        ("my knee hurts", "stiff neck"),
+    ])
+    def test_does_not_match(self, answer, phrase):
+        assert phrase_in_text(answer, phrase) is False
+
+    def test_contains_rule_uses_the_matcher(self):
+        rules = {"red_flags": [
+            {"finding": "associated_symptoms", "op": "contains",
+             "value": "stiff neck", "acuity": "emergency"},
+        ], "rules": [], "risk_overrides": [], "default_acuity": "low"}
+        # Round-2 live-test regression: reworded meningitis sign must fire...
+        assert evaluate_disposition_rules(
+            rules, {"associated_symptoms": "my neck feels stiff"}, set()) == "emergency"
+        # ...and a denial must not.
+        assert evaluate_disposition_rules(
+            rules, {"associated_symptoms": "no stiff neck or rash"}, set()) == "low"
 
 
 class TestAssignAcuity:

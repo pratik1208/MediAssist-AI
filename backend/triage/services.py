@@ -8,6 +8,7 @@ route_disposition.
 
 import datetime
 import logging
+import re
 
 from django.utils import timezone
 
@@ -19,15 +20,59 @@ from triage.models import ClinicalProtocol, EscalationAlert
 log = logging.getLogger("triage")
 
 
+# Words that flip the meaning of a clause ("no fever" must not count as a
+# fever finding). Checked per clause, not per sentence, so "no rash, and my
+# neck feels stiff" still surfaces the stiff neck.
+NEGATION_WORDS = {
+    "no", "not", "none", "never", "without", "denies", "denied", "nothing",
+    "don't", "dont", "doesn't", "doesnt", "didn't", "didnt", "isn't", "isnt",
+    "haven't", "havent", "hasn't", "hasnt", "can't", "cant", "negative",
+}
+
+# Clause boundaries: punctuation plus coordinating words. "or" is NOT a
+# boundary because negation distributes over it ("no rash or stiff neck").
+_CLAUSE_SPLIT = re.compile(r"[,.;:!?]|\band\b|\bbut\b|\bhowever\b|\bthough\b")
+
+
+def phrase_in_text(text: str, phrase: str) -> bool:
+    """Negation-aware, order-insensitive phrase matching for patient answers.
+
+    "my neck feels stiff" matches the phrase "stiff neck"; "no fever, just a
+    headache" does not match "fever". Each phrase word matches as a prefix so
+    "vomit" catches "vomiting" and "sudden" catches "suddenly". Missing a
+    warning sign is worse than over-matching, so a phrase only has to appear
+    un-negated in ONE clause to count.
+    """
+    targets = re.findall(r"[a-z]+", str(phrase).lower())
+    if not targets:  # nothing word-like to match (defensive)
+        return str(phrase).lower() in str(text).lower()
+    for clause in _CLAUSE_SPLIT.split(str(text).lower()):
+        words = re.findall(r"[a-z']+", clause)
+        first_hits = []
+        for target in targets:
+            hits = [i for i, word in enumerate(words) if word.startswith(target)]
+            if not hits:
+                first_hits = None
+                break
+            first_hits.append(min(hits))
+        if first_hits is None:
+            continue
+        if not any(word in NEGATION_WORDS for word in words[: min(first_hits)]):
+            return True
+    return False
+
+
 def select_protocol(symptoms_text: str) -> ClinicalProtocol | None:
     """Match the patient's complaint to an active ClinicalProtocol (FR-T2).
 
-    Case-insensitive substring match of each protocol's symptom_keywords
-    against the reported text. The protocol with the most matched keywords
-    wins (total matched length breaks ties, so a specific multi-word match
-    beats a generic one). Returns None when nothing matches — the caller
-    decides the fallback (generic questioning or human handoff), never a
-    wrong protocol.
+    Keywords are matched with phrase_in_text — word order doesn't matter and
+    negated mentions don't count, so "my baby has a fever" reaches the
+    pediatric keyword "baby fever" instead of the adult protocol's plain
+    "fever", and "no fever, just a headache" won't route to fever at all.
+    The protocol with the most matched keywords wins (total matched length
+    breaks ties, so a specific multi-word match beats a generic one).
+    Returns None when nothing matches — the caller decides the fallback
+    (generic questioning or human handoff), never a wrong protocol.
     """
     text = (symptoms_text or "").lower()
     if not text.strip():
@@ -35,7 +80,7 @@ def select_protocol(symptoms_text: str) -> ClinicalProtocol | None:
 
     best, best_score = None, (0, 0)
     for protocol in ClinicalProtocol.objects.filter(is_active=True):
-        matched = [k for k in protocol.symptom_keywords if k.lower() in text]
+        matched = [k for k in protocol.symptom_keywords if phrase_in_text(text, k)]
         score = (len(matched), sum(len(k) for k in matched))
         if matched and score > best_score:
             best, best_score = protocol, score
@@ -105,10 +150,12 @@ def _condition_met(condition: dict, findings: dict) -> bool:
         # curl drive — it truthy-matched worst_ever and forced emergency).
         return value is True
     if op == "contains":
-        needle = str(condition["value"]).lower()
+        # Negation-aware phrase matching: "my neck feels stiff" satisfies
+        # "stiff neck", while "no fever" does not satisfy "fever".
+        needle = str(condition["value"])
         if isinstance(value, (list, tuple)):
-            return any(needle in str(item).lower() for item in value)
-        return needle in str(value).lower()
+            return any(phrase_in_text(str(item), needle) for item in value)
+        return phrase_in_text(str(value), needle)
     try:
         actual, target = float(value), float(condition["value"])
     except (TypeError, ValueError):

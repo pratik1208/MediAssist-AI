@@ -139,10 +139,26 @@ class TestStateGate:
         assert conversation.agent_context["active_agent"] == "scheduling"
         assert conversation.agent_context["handoff"]["symptoms"] == ["cough"]
 
-    def test_chat_dictated_insurance_is_stashed_for_the_policy_writers(self, conversation, rahul):
+    def test_partially_dictated_insurance_stays_stashed(self, conversation, rahul):
         self._linked(conversation, rahul, verified=True)
-        run(conversation, insurance_provider="BlueShield", insurance_policy_number="BS-448291")
+        result = run(conversation, insurance_provider="BlueShield")
+        assert result["stage"] == "insurance"  # still waiting on the number
+        assert not InsurancePolicy.objects.filter(patient=rahul).exists()
         conversation.refresh_from_db()
         assert conversation.agent_context["pending_insurance"] == {
-            "provider_name": "BlueShield", "policy_number": "BS-448291",
+            "provider_name": "BlueShield",
         }
+
+    def test_fully_dictated_insurance_writes_the_policy_and_advances(self, conversation, rahul):
+        # Provider in one turn, number in the next — the moment both are in,
+        # the policy row exists and the gate moves past the insurance stage.
+        self._linked(conversation, rahul, verified=True)
+        run(conversation, insurance_provider="BlueShield")
+        result = run(conversation, insurance_policy_number="BS-448291")
+        assert result["stage"] == "intake"
+        policy = InsurancePolicy.objects.get(patient=rahul)
+        assert policy.provider_name == "BlueShield"
+        assert policy.policy_number == "BS-448291"
+        assert policy.eligibility_checked_at is not None
+        conversation.refresh_from_db()
+        assert "pending_insurance" not in conversation.agent_context

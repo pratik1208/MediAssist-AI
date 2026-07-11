@@ -1,11 +1,12 @@
 import datetime
+from unittest.mock import patch
 
 import pytest
 from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from core.models import Conversation, EventLog, Patient
-from registration.models import UploadedDocument
+from registration.models import InsurancePolicy, UploadedDocument
 from registration.tests.test_services import sent_code
 from registration.views import REGISTRATION_SESSION_SALT
 
@@ -180,15 +181,18 @@ class TestFullRegistrationFlow:
         assert insurance.json()["eligibility_status"] == "eligible"
         assert insurance.json()["flagged"] is False
 
-        # 5. upload an insurance card image
-        upload = client.post(
-            "/api/registration/documents",
-            {"file": SimpleUploadedFile("card.png", b"png-bytes", "image/png"),
-             "doc_type": "insurance_card"},
-            headers={"X-Session-Token": token},
-        )
+        # 5. upload an insurance card image (extraction unavailable — the
+        #    upload must still succeed, "zero AI")
+        with patch("registration.views.run_document_extraction",
+                   side_effect=RuntimeError("no vision provider")):
+            upload = client.post(
+                "/api/registration/documents",
+                {"file": SimpleUploadedFile("card.png", b"png-bytes", "image/png"),
+                 "doc_type": "insurance_card"},
+                headers={"X-Session-Token": token},
+            )
         assert upload.status_code == 201
-        assert upload.json()["extraction_status"] == "pending"
+        assert upload.json()["policy_created"] is False
 
         # 6. intake (via the CRUD endpoint until the AI writes it in Phase 4)
         intake = client.post("/api/intakesummary",
@@ -233,3 +237,52 @@ class TestFullRegistrationFlow:
         response = post_json(client, "/api/registration/complete", {}, token)
         assert response.status_code == 400
         assert set(response.json()["missing"]) == {"identity", "insurance", "intake"}
+
+
+class TestInsuranceCardExtraction:
+    """Uploading a card is what moves registration past the insurance stage."""
+
+    def _upload(self, client, token):
+        return client.post(
+            "/api/registration/documents",
+            {"file": SimpleUploadedFile("card.png", b"png-bytes", "image/png"),
+             "doc_type": "insurance_card"},
+            headers={"X-Session-Token": token},
+        )
+
+    def test_legible_card_creates_the_policy(self, client, db, settings, tmp_path):
+        settings.MEDIA_ROOT = tmp_path
+        token = start_session(client)["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token)
+
+        extracted = {
+            "document_type": "insurance_card", "legible": True,
+            "insurance": {"provider": "BlueShield", "policy_number": "BS-448291",
+                          "member_id": "M-77", "coverage_start": "2026-01-01",
+                          "coverage_end": "2026-12-31"},
+        }
+        with patch("registration.views.run_document_extraction", return_value=extracted):
+            response = self._upload(client, token)
+
+        assert response.status_code == 201
+        assert response.json()["policy_created"] is True
+        policy = InsurancePolicy.objects.get(patient__first_name="Rahul")
+        assert policy.provider_name == "BlueShield"
+        assert policy.member_id == "M-77"
+        assert str(policy.coverage_start) == "2026-01-01"
+        assert policy.eligibility_checked_at is not None
+        assert policy.raw_extraction["legible"] is True
+
+    def test_illegible_card_stores_the_file_without_a_policy(self, client, db, settings, tmp_path):
+        settings.MEDIA_ROOT = tmp_path
+        token = start_session(client)["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token)
+
+        with patch("registration.views.run_document_extraction",
+                   return_value={"document_type": "insurance_card", "legible": False}):
+            response = self._upload(client, token)
+
+        assert response.status_code == 201
+        assert response.json()["policy_created"] is False
+        assert not InsurancePolicy.objects.exists()
+        assert UploadedDocument.objects.count() == 1

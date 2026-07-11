@@ -107,6 +107,26 @@ def handle_registration_message(conversation: Conversation, conversation_history
     if chat_insurance:
         ctx["pending_insurance"] = {**ctx.get("pending_insurance", {}), **chat_insurance}
 
+    # Once provider + policy number are both in, write the policy row —
+    # otherwise the state gate below would keep the patient on the insurance
+    # stage forever (the card-upload path writes its row in the documents
+    # endpoint; this is the dictated-in-chat path).
+    pending_insurance = ctx.get("pending_insurance", {})
+    if (
+        patient is not None
+        and pending_insurance.get("provider_name")
+        and pending_insurance.get("policy_number")
+        and not InsurancePolicy.objects.filter(patient=patient).exists()
+    ):
+        services.create_or_update_patient_record(
+            patient, insurance={"coverage_details": "", **pending_insurance}
+        )
+        policy = InsurancePolicy.objects.get(
+            patient=patient, policy_number=pending_insurance["policy_number"]
+        )
+        services.verify_insurance_eligibility(policy)
+        ctx.pop("pending_insurance", None)
+
     # -- 4. the state gate: code, not the model, decides the stage ---------
     if patient is None:
         stage = "duplicate_hold" if ctx.get("duplicate_candidate_ids") else "demographics"

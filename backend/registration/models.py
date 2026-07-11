@@ -8,8 +8,10 @@ class InsurancePolicy(models.Model):
     member_id = models.CharField(max_length=100, null=True, blank=True)
     provider_name = models.CharField(max_length=100)
     coverage_details = models.TextField()
-    coverage_start = models.DateField()
-    coverage_end = models.DateField()
+    # Nullable: a policy dictated in chat has provider + number but no dates;
+    # they arrive later from the card extraction or the insurance endpoint.
+    coverage_start = models.DateField(null=True, blank=True)
+    coverage_end = models.DateField(null=True, blank=True)
     eligibility_status = models.CharField(max_length=50, choices=[("unknown", "unknown"), ("eligible", "eligible"), ("ineligible", "ineligible")])
     eligibility_checked_at = models.DateTimeField(null=True, blank=True)
     raw_extraction = models.JSONField(null=True, blank=True)

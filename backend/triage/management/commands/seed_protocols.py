@@ -103,6 +103,41 @@ PROTOCOLS = [
         },
     },
     {
+        # Named to match (and repair) the hand-created legacy row that had
+        # capture-less questions and an incompatible rules format.
+        "name": "Adult Fever Protocol",
+        "symptom_keywords": [
+            "fever", "high temperature", "chills", "feverish", "temperature",
+        ],
+        "question_flow": [
+            {"id": 1, "ask": "What is your temperature, and how did you measure it?", "capture": "temperature_f"},
+            {"id": 2, "ask": "How long have you had the fever?", "capture": "duration_hours"},
+            {"id": 3, "ask": "Any stiff neck, confusion, trouble breathing, or a new rash?", "capture": "associated_symptoms"},
+            {"id": 4, "ask": "Do you have a weakened immune system (e.g. chemotherapy, transplant, HIV)?", "capture": "immunocompromised"},
+            {"id": 5, "ask": "Are you keeping fluids down, or vomiting?", "capture": "hydration"},
+        ],
+        "disposition_rules": {
+            "red_flags": [
+                {"finding": "associated_symptoms", "op": "contains", "value": "stiff neck", "acuity": "emergency"},
+                {"finding": "associated_symptoms", "op": "contains", "value": "confusion", "acuity": "emergency"},
+                {"finding": "associated_symptoms", "op": "contains", "value": "trouble breathing", "acuity": "emergency"},
+                {"finding": "immunocompromised", "op": "is_true", "acuity": "high"},
+                {"finding": "temperature_f", "op": "gte", "value": 104, "acuity": "high"},
+            ],
+            "rules": [
+                {"finding": "associated_symptoms", "op": "contains", "value": "rash", "acuity": "medium"},
+                {"finding": "hydration", "op": "contains", "value": "vomit", "acuity": "medium"},
+                {"finding": "temperature_f", "op": "gte", "value": 103, "acuity": "medium"},
+                {"finding": "duration_hours", "op": "gte", "value": 72, "acuity": "medium"},
+            ],
+            "risk_overrides": [
+                {"risk_factor": "age_gte_65", "raise_to_at_least": "medium"},
+                {"risk_factor": "immunocompromised", "raise_to_at_least": "high"},
+            ],
+            "default_acuity": "low",
+        },
+    },
+    {
         "name": "Headache",
         "symptom_keywords": [
             "headache", "head pain", "migraine", "head hurts", "pressure in my head",
@@ -176,8 +211,8 @@ PROTOCOLS = [
 class Command(BaseCommand):
     help = (
         "Load or update the starter clinical triage protocols (chest pain, "
-        "pediatric fever, headache, abdominal pain). Idempotent — matches on "
-        "protocol name. Dev seed data: pending clinical approval."
+        "adult fever, pediatric fever, headache, abdominal pain). Idempotent — "
+        "matches on protocol name. Dev seed data: pending clinical approval."
     )
 
     def handle(self, *args, **options):

@@ -13,6 +13,7 @@ import json
 from core.ai import stream_reply
 from core.base_crud_views import BaseCRUDAPIView
 from core.models import Conversation, Message, OTPChallenge, Patient
+from registration.ai.extract import run_document_extraction
 from registration.ai.handler import handle_registration_message
 from registration.ai.prompts import REGISTRATION_SYSTEM_PROMPT
 from registration.models import InsurancePolicy, IntakeSummary, UploadedDocument
@@ -116,7 +117,7 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
                  "candidate_ids": [p.id for p in candidates]},
                 status=status.HTTP_409_CONFLICT,
             )
-
+        #registraion is paused until review duplicate
         existing = candidates[0] if match == "existing" else None
         patient = services.create_or_update_patient_record(
             existing, demographics=dict(request.data)
@@ -186,7 +187,11 @@ class VerifyOtpAPIView(RegistrationSessionAPIView):
 class UploadDocumentAPIView(RegistrationSessionAPIView):
     """POST /api/registration/documents — multipart {file, doc_type} -> 201.
 
-    Stores the file only; AI extraction fills extracted_data in Phase 4.
+    Stores the file, then tries AI extraction. A legible insurance card also
+    writes the InsurancePolicy row (that's what moves the registration past
+    the insurance stage). Extraction failure never fails the upload — the
+    response's extraction_status/policy_created tell the UI to fall back to
+    asking for the provider name and policy number in chat.
     """
 
     parser_classes = [MultiPartParser, FormParser]
@@ -210,9 +215,37 @@ class UploadDocumentAPIView(RegistrationSessionAPIView):
         document = UploadedDocument.objects.create(
             patient=patient, document_type=doc_type, file=upload
         )
+
+        try:
+            extracted = run_document_extraction(document)
+        except Exception:  # vision provider unavailable / unreadable file
+            extracted = {}
+
+        policy_created = False
+        card = extracted.get("insurance") or {}
+        if extracted.get("legible") and card.get("provider") and card.get("policy_number"):
+            insurance = {
+                "provider_name": card["provider"],
+                "policy_number": card["policy_number"],
+                "coverage_details": "",
+            }
+            for field in ("member_id", "coverage_start", "coverage_end"):
+                if card.get(field):
+                    insurance[field] = card[field]
+            services.create_or_update_patient_record(patient, insurance=insurance)
+            policy = InsurancePolicy.objects.get(
+                patient=patient, policy_number=card["policy_number"]
+            )
+            policy.raw_extraction = extracted
+            policy.save(update_fields=["raw_extraction"])
+            services.verify_insurance_eligibility(policy)
+            policy_created = True
+
+        document.refresh_from_db()  # run_document_extraction updates the status
         return Response(
             {"id": document.id, "doc_type": document.document_type,
-             "extraction_status": document.extraction_status},
+             "extraction_status": document.extraction_status,
+             "policy_created": policy_created},
             status=status.HTTP_201_CREATED,
         )
 
