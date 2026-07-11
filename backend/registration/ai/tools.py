@@ -143,7 +143,8 @@ EXTRACT_DOCUMENT_DATA_TOOL = strict_tool(
     {
         "document_type": {
             "type": "string",
-            "enum": ["insurance_card", "id_card", "prescription", "lab_report", "referral_letter", "other"],
+            "enum": ["insurance_card", "id_card", "prescription", "lab_report", "referral_letter",
+                     "consultation_report", "other"],
             "description": "What kind of document this actually is (may differ from what the patient claimed).",
         },
         "legible": {

@@ -8,10 +8,19 @@ name, like the other seed commands.
 
 from django.core.management.base import BaseCommand
 
-from core.models import Specialty
+from core.models import Doctor, Specialty
 from referrals.models import Specialist
 
 INSURANCES = ["BlueShield", "Star Health", "Apollo Munich", "HDFC Ergo"]
+
+# So book_specialist_visit() has at least one in-network specialist to book
+# against out of the box (most seeded specialists are out-of-network —
+# contacted via their contact_channel, per FR-F3 — which is the realistic
+# majority case, but Phase 3's booking endpoint needs one bookable example).
+ALL_WEEK_8_TO_20 = {
+    day: [["08:00", "13:00"], ["14:00", "20:00"]]
+    for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+}
 
 SPECIALISTS = [
     {"name": "Dr. Rohan Kulkarni", "practice_name": "Pune Heart Institute",
@@ -19,7 +28,8 @@ SPECIALISTS = [
      "address": {"city": "Pune", "area": "Shivajinagar", "postal_code": "411005"},
      "accepted_insurances": ["BlueShield", "Star Health"],
      "languages": ["en", "hi", "mr"], "accepting_new_patients": True,
-     "contact_channel": "e_referral", "consultation_fee": "1200.00"},
+     "contact_channel": "e_referral", "consultation_fee": "1200.00",
+     "in_network": True},
     {"name": "Dr. Neha Kapoor", "practice_name": "CardioCare Clinic",
      "specialty": Specialty.CARDIOLOGY,
      "address": {"city": "Pune", "area": "Kothrud", "postal_code": "411038"},
@@ -82,11 +92,19 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         for spec in SPECIALISTS:
+            fields = {k: v for k, v in spec.items() if k not in ("name", "in_network")}
+            if spec.get("in_network"):
+                doctor, _ = Doctor.objects.update_or_create(
+                    name=f"{spec['name']} (internal)",
+                    defaults={"specialty": spec["specialty"], "working_hours": ALL_WEEK_8_TO_20},
+                )
+                fields["internal_doctor"] = doctor
             specialist, created = Specialist.objects.update_or_create(
-                name=spec["name"], defaults={k: v for k, v in spec.items() if k != "name"},
+                name=spec["name"], defaults=fields,
             )
+            note = " [in-network, bookable]" if spec.get("in_network") else ""
             self.stdout.write(
                 f"{'created' if created else 'updated'}: {specialist.name} "
-                f"({specialist.specialty}, accepting={specialist.accepting_new_patients})"
+                f"({specialist.specialty}, accepting={specialist.accepting_new_patients}){note}"
             )
         self.stdout.write(self.style.SUCCESS(f"seeded {len(SPECIALISTS)} specialists"))

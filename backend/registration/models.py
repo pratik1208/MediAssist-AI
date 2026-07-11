@@ -51,6 +51,10 @@ class UploadedDocument(models.Model):
             ("prescription", "prescription"),
             ("lab_report", "lab_report"),
             ("referral_letter", "referral_letter"),
+            # A specialist's consultation report coming BACK from a referral
+            # (Agent 5 FR-F10) — distinct from referral_letter, which goes
+            # the other direction (PCP -> specialist).
+            ("consultation_report", "consultation_report"),
             ("other", "other"),
         ],
     )

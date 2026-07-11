@@ -179,6 +179,60 @@ class TestAdvanceStatus:
         assert referral.status == start  # unchanged
 
 
+class TestResumeReferral:
+    def test_resumes_to_the_status_it_stalled_from(self, patient, doctor):
+        referral = make_referral(
+            patient, doctor, status="stalled",
+            status_history=[{"status": "created", "at": "1"},
+                            {"status": "accepted", "at": "2"},
+                            {"status": "stalled", "at": "3"}],
+        )
+        services.resume_referral(referral)
+        referral.refresh_from_db()
+        assert referral.status == "accepted"
+        assert referral.status_history[-1]["status"] == "accepted"
+
+    def test_resuming_unblocks_the_stricter_action_preconditions(self, patient, doctor, specialist):
+        # book_specialist_visit requires status == "accepted" exactly — a
+        # referral that stalled while accepted must resume first, then book
+        # works normally (it must NOT be bookable straight from "stalled").
+        internal_doctor = Doctor.objects.create(name="Dr. Rohan Kulkarni (internal)",
+                                                specialty="Cardiology")
+        specialist.internal_doctor = internal_doctor
+        specialist.save(update_fields=["internal_doctor"])
+        referral = make_referral(
+            patient, doctor, specialist=specialist, status="stalled",
+            status_history=[{"status": "created", "at": "1"},
+                            {"status": "accepted", "at": "2"},
+                            {"status": "stalled", "at": "3"}],
+        )
+        start = timezone.now() + datetime.timedelta(days=1)
+        with pytest.raises(services.IllegalStatusTransition):
+            services.book_specialist_visit(referral, (start, start + datetime.timedelta(minutes=30)))
+
+        services.resume_referral(referral)
+        services.book_specialist_visit(referral, (start, start + datetime.timedelta(minutes=30)))
+        referral.refresh_from_db()
+        assert referral.status == "appointment_scheduled"
+
+    def test_refuses_when_history_has_no_valid_prior_status(self, patient, doctor):
+        # A real referral's history always has "created" seeded first
+        # (create_referral does this); history that's only ever "stalled"
+        # is inconsistent data, and "created" itself is never a legal
+        # resume target — must raise, never guess a fabricated status.
+        referral = make_referral(patient, doctor, status="stalled",
+                                 status_history=[{"status": "stalled", "at": "1"}])
+        with pytest.raises(services.IllegalStatusTransition):
+            services.resume_referral(referral)
+        referral.refresh_from_db()
+        assert referral.status == "stalled"  # unchanged
+
+    def test_refuses_when_not_actually_stalled(self, patient, doctor):
+        referral = make_referral(patient, doctor, status="accepted")
+        with pytest.raises(services.IllegalStatusTransition):
+            services.resume_referral(referral)
+
+
 class TestCheckStalledReferrals:
     def _backdate(self, referral, days):
         Referral.objects.filter(id=referral.id).update(
@@ -258,6 +312,38 @@ class TestHandleMissedAppointment:
         assert result["action"] == "physician_notified"
         referral.refresh_from_db()
         assert referral.status == "closed"  # unchanged, no crash
+
+
+class TestAcceptReferral:
+    def test_normal_referral_already_has_a_referring_doctor(self, patient, doctor, specialist):
+        referral = make_referral(patient, doctor, status="created")  # doctor set by make_referral
+        services.accept_referral(referral, specialist)
+        referral.refresh_from_db()
+        assert referral.status == "accepted"
+        assert referral.specialist_id == specialist.id
+        assert referral.referring_doctor_id == doctor.id
+
+    def test_draft_referral_requires_a_confirming_doctor(self, patient, specialist):
+        draft = make_referral(patient, None, referring_doctor=None, status="created")
+        with pytest.raises(ValueError, match="referring physician must confirm"):
+            services.accept_referral(draft, specialist)
+        draft.refresh_from_db()
+        assert draft.status == "created"  # unchanged
+        assert draft.specialist is None  # unchanged
+
+    def test_confirming_doctor_attaches_and_proceeds(self, patient, doctor, specialist):
+        draft = make_referral(patient, None, referring_doctor=None, status="created")
+        services.accept_referral(draft, specialist, doctor)
+        draft.refresh_from_db()
+        assert draft.status == "accepted"
+        assert draft.referring_doctor_id == doctor.id
+
+    def test_emits_priorauth_needed_for_agent_6(self, patient, doctor, specialist):
+        referral = make_referral(patient, doctor, status="created")
+        services.accept_referral(referral, specialist)
+        event = EventLog.objects.filter(name="priorauth.needed").latest("id")
+        assert event.payload["referral_id"] == referral.id
+        assert event.payload["specialty_needed"] == referral.specialty_needed
 
 
 class TestBookSpecialistVisit:

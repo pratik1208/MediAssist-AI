@@ -66,8 +66,13 @@ class Referral(models.Model):
     ]
 
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="referrals")
+    # Nullable: a triage handoff (Phase 6) auto-creates a draft referral with
+    # no referring_doctor yet — a physician must confirm it (attach
+    # themselves) before it can be accepted by a specialist. A physician's
+    # own one-click referral (FR-F1) always sets this at creation.
     referring_doctor = models.ForeignKey(
         Doctor, on_delete=models.PROTECT, related_name="referrals_made",
+        null=True, blank=True,
     )
     specialist = models.ForeignKey(
         Specialist, on_delete=models.SET_NULL, null=True, blank=True,
@@ -135,3 +140,31 @@ class ConsultationReport(models.Model):
 
     def __str__(self):
         return f"Consultation report for referral #{self.referral_id}"
+
+
+class SpecialistOutreachTask(models.Model):
+    """FR-F3 contact log (Phase 4): a queued outbound message to a
+    specialist's office. Deliberately simple — a templated-message queue,
+    not a real automated call/email sender or voice agent yet (that's a
+    later enhancement); this just records what would be sent and lets a
+    human or a future sender mark it done."""
+
+    STATUS_CHOICES = [
+        ("queued", "queued"),
+        ("sent", "sent"),
+        ("failed", "failed"),
+    ]
+
+    referral = models.ForeignKey(Referral, on_delete=models.CASCADE, related_name="outreach_tasks")
+    specialist = models.ForeignKey(Specialist, on_delete=models.CASCADE)
+    channel = models.CharField(max_length=20, choices=Specialist.CONTACT_CHANNEL_CHOICES)
+    message = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "referrals_outreach_task"
+
+    def __str__(self):
+        return f"Outreach to {self.specialist.name} for referral #{self.referral_id} ({self.status})"
