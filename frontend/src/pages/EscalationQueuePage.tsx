@@ -53,6 +53,9 @@ export default function EscalationQueuePage() {
             />
             Show acknowledged
           </label>
+          <Link to="/staff/refills" className="font-medium text-teal-700 hover:underline">
+            Refill approvals →
+          </Link>
           <Link to="/triage" className="font-medium text-teal-700 hover:underline">
             Patient triage →
           </Link>

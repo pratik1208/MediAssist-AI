@@ -23,6 +23,9 @@ export default function SchedulingChatPage() {
           <Link to="/triage" className="text-sm font-medium text-teal-700 hover:underline">
             Symptom check
           </Link>
+          <Link to="/refills" className="text-sm font-medium text-teal-700 hover:underline">
+            Refills
+          </Link>
           <Link to="/register" className="text-sm font-medium text-teal-700 hover:underline">
             New patient? Register →
           </Link>

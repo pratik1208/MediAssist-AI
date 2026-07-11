@@ -86,6 +86,20 @@ class CreateRefillRequestAPIView(SessionTokenAPIView):
         except (Prescription.DoesNotExist, ValueError, TypeError):
             return Response({"error": "prescription not found"},
                             status=status.HTTP_404_NOT_FOUND)
+
+        # One unresolved request per prescription at a time — otherwise the
+        # same medication piles up as duplicate rows in the physician queue.
+        existing = (RefillRequest.objects.filter(
+            prescription=prescription, status__in=RefillRequest.OPEN_STATUSES,
+        ).order_by("-id").first())
+        if existing is not None:
+            return Response(
+                {"id": existing.id, "code": "already_requested",
+                 "status": existing.status,
+                 "detail": "a refill request for this prescription is already in progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         pharmacy = self._resolve_pharmacy(request.data, patient)
         if pharmacy is None:
             return Response(
@@ -161,6 +175,15 @@ class PhysicianRefillAPIView(APIView):
             )
         return None
 
+    def run_decision(self, fn, *args):
+        """Call a services decision function, translating the race-condition
+        guard (two near-simultaneous clicks on the same request) into the
+        same friendly 400 must_be_pending already returns for the common case."""
+        try:
+            return fn(*args), None
+        except services.RefillRequestNotPending as exc:
+            return None, Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class RefillQueueAPIView(APIView):
     """GET /api/staff/refills/queue/ — pending approvals with summaries."""
@@ -193,7 +216,10 @@ class ApproveRefillAPIView(PhysicianRefillAPIView):
         error = self.must_be_pending(refill_request)
         if error:
             return error
-        services.approve(refill_request, self.deciding_doctor(request, refill_request))
+        _, error = self.run_decision(
+            services.approve, refill_request, self.deciding_doctor(request, refill_request))
+        if error:
+            return error
         refill_request.refresh_from_db()
         return Response({"status": refill_request.status})
 
@@ -212,7 +238,10 @@ class RejectRefillAPIView(PhysicianRefillAPIView):
         if not reason:
             return Response({"error": "reason is required"},
                             status=status.HTTP_400_BAD_REQUEST)
-        services.reject(refill_request, self.deciding_doctor(request, refill_request), reason)
+        _, error = self.run_decision(
+            services.reject, refill_request, self.deciding_doctor(request, refill_request), reason)
+        if error:
+            return error
         return Response({"status": "rejected"})
 
 
@@ -226,5 +255,8 @@ class RequestVisitAPIView(PhysicianRefillAPIView):
         error = self.must_be_pending(refill_request)
         if error:
             return error
-        services.request_visit(refill_request, self.deciding_doctor(request, refill_request))
+        _, error = self.run_decision(
+            services.request_visit, refill_request, self.deciding_doctor(request, refill_request))
+        if error:
+            return error
         return Response({"status": "visit_required"})

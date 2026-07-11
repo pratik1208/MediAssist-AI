@@ -112,9 +112,26 @@ class Command(BaseCommand):
                 "is_controlled_substance": False,
                 **overrides,
             }
-            prescription, created = Prescription.objects.update_or_create(
-                patient=patient, medication_name=medication, defaults=defaults,
-            )
+            # An approval writes back a NEW row for the same medication (see
+            # services.approve), so (patient, medication) is not unique —
+            # update the newest row and retire any older active duplicates,
+            # the same invariant approve() maintains.
+            rows = Prescription.objects.filter(
+                patient=patient, medication_name=medication,
+            ).order_by("-id")
+            prescription = rows.first()
+            created = prescription is None
+            if created:
+                prescription = Prescription.objects.create(
+                    patient=patient, medication_name=medication, **defaults,
+                )
+            else:
+                for field, value in defaults.items():
+                    setattr(prescription, field, value)
+                prescription.save()
+                rows.exclude(id=prescription.id).filter(status="active").update(
+                    status="superseded",
+                )
             flags = []
             if prescription.is_controlled_substance:
                 flags.append("CONTROLLED")

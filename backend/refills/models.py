@@ -72,6 +72,15 @@ class RefillRequest(models.Model):
         ("ready_for_pickup", "Ready for Pickup"),
     ]
 
+    # A second request for the same prescription is only a problem while an
+    # earlier one is still unresolved — "paused" is excluded on purpose: the
+    # patient may have since completed the missing labs/visit, so a fresh
+    # attempt must be allowed to re-run eligibility, not get stuck forever
+    # behind the first pause.
+    OPEN_STATUSES = frozenset({
+        "received", "eligibility_check", "pending_approval", "visit_required",
+    })
+
     prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE)
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
     pharmacy = models.ForeignKey(Pharmacy, on_delete=models.CASCADE)

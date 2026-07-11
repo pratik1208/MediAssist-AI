@@ -231,6 +231,7 @@ def create_or_update_patient_record(
         patient = Patient.objects.create(registration_status="in_process", **demographics)
         _audit(patient, "patient.created", {"fields": sorted(demographics)})
     elif demographics:
+ 
         for field_name, value in demographics.items():
             setattr(patient, field_name, value)
         patient.save(update_fields=list(demographics))

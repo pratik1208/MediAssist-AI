@@ -263,10 +263,31 @@ def build_renewal_summary(request: RefillRequest) -> dict:
 
 # -- physician decisions (FR-M6/M7) ------------------------------------------
 
+class RefillRequestNotPending(Exception):
+    """A physician decision was attempted on a request that isn't awaiting
+    one anymore. The API view checks this too (for a fast, friendly error),
+    but that read-then-act check has a race: two near-simultaneous clicks on
+    the same request could both pass it before either write lands. This is
+    the real guard — it re-reads the row under a lock, so only one decision
+    can ever go through, and approve() can never mint two active
+    prescriptions for the same request.
+    """
+
+
+def _lock_pending(request_id: int) -> RefillRequest:
+    refill_request = RefillRequest.objects.select_for_update().get(id=request_id)
+    if refill_request.status != "pending_approval":
+        raise RefillRequestNotPending(
+            f"refill request {request_id} is {refill_request.status!r}, not pending_approval"
+        )
+    return refill_request
+
+
 @transaction.atomic
 def approve(request: RefillRequest, doctor) -> Prescription:
     """Approval writes back a fresh prescription row (the EHR-write stand-in,
     FR-M7), transmits it to the pharmacy, and notifies the patient (FR-M8)."""
+    request = _lock_pending(request.id)
     template = request.prescription
     request.status = "approved"
     request.decided_by, request.decided_at = doctor, timezone.now()
@@ -303,7 +324,9 @@ def approve(request: RefillRequest, doctor) -> Prescription:
     return new_rx
 
 
+@transaction.atomic
 def reject(request: RefillRequest, doctor, reason: str) -> None:
+    request = _lock_pending(request.id)
     request.status = "rejected"
     request.pause_reason = reason[:200]
     request.decided_by, request.decided_at = doctor, timezone.now()
@@ -320,9 +343,11 @@ def reject(request: RefillRequest, doctor, reason: str) -> None:
     })
 
 
+@transaction.atomic
 def request_visit(request: RefillRequest, doctor) -> None:
     """The physician wants to see the patient first; Scheduling reacts to the
     event and offers a booking (FR-M6 -> Agent 1)."""
+    request = _lock_pending(request.id)
     request.status = "visit_required"
     request.decided_by, request.decided_at = doctor, timezone.now()
     request.save()

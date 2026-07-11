@@ -144,6 +144,68 @@ class TestCreateRefillRequest:
                              session["token"])
         assert response.status_code == 201
 
+    def test_duplicate_request_while_pending_is_refused(self, client, session, doctor, pharmacy):
+        # Regression: a patient tapping "Request refill" twice (or checking
+        # back and retrying) must not pile up a second row in the physician
+        # queue for the same prescription.
+        rx = make_rx(session["patient"], doctor)
+        first = post_json(client, REQUESTS_URL,
+                          {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                          session["token"])
+        assert first.status_code == 201
+        second = post_json(client, REQUESTS_URL,
+                           {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                           session["token"])
+        assert second.status_code == 409
+        body = second.json()
+        assert body["code"] == "already_requested"
+        assert body["id"] == first.json()["id"]
+        assert RefillRequest.objects.filter(prescription=rx).count() == 1
+
+    def test_duplicate_request_while_visit_required_is_refused(
+        self, client, session, doctor, pharmacy,
+    ):
+        from refills import services
+        rx = make_rx(session["patient"], doctor)
+        first = post_json(client, REQUESTS_URL,
+                          {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                          session["token"]).json()
+        request = RefillRequest.objects.get(id=first["id"])
+        services.request_visit(request, doctor)
+
+        second = post_json(client, REQUESTS_URL,
+                           {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                           session["token"])
+        assert second.status_code == 409
+        assert second.json()["code"] == "already_requested"
+
+    def test_new_request_allowed_after_rejection_or_pause(self, client, session, doctor, pharmacy):
+        # Closed outcomes (rejected) and recoverable ones (paused, once the
+        # patient has addressed the reason) must NOT block trying again.
+        from refills import services
+        rx = make_rx(session["patient"], doctor)
+        first = post_json(client, REQUESTS_URL,
+                          {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                          session["token"]).json()
+        services.reject(RefillRequest.objects.get(id=first["id"]), doctor, "not due yet")
+
+        second = post_json(client, REQUESTS_URL,
+                           {"prescription_id": rx.id, "pharmacy_id": pharmacy.id},
+                           session["token"])
+        assert second.status_code == 201  # rejection doesn't block a fresh attempt
+
+        paused_rx = make_rx(session["patient"], doctor, medication_name="Losartan",
+                            followup_required=True)
+        paused = post_json(client, REQUESTS_URL,
+                           {"prescription_id": paused_rx.id, "pharmacy_id": pharmacy.id},
+                           session["token"])
+        assert paused.status_code == 409 and paused.json()["code"] == "paused"
+        retry = post_json(client, REQUESTS_URL,
+                          {"prescription_id": paused_rx.id, "pharmacy_id": pharmacy.id},
+                          session["token"])
+        assert retry.status_code == 409  # still paused (nothing changed), but not "already_requested"
+        assert retry.json()["code"] == "paused"
+
 
 class TestRequestStatus:
     def test_status_and_pause_reason(self, client, session, doctor, pharmacy):
@@ -215,6 +277,44 @@ class TestPhysicianQueueAndActions:
         staff_client.post(f"/api/staff/refills/{request_id}/approve/")
         response = staff_client.post(f"/api/staff/refills/{request_id}/approve/")
         assert response.status_code == 400
+        # A second approve() must never mint a second active prescription.
+        from refills.models import Prescription
+        rx = RefillRequest.objects.get(id=request_id).prescription
+        assert Prescription.objects.filter(
+            medication_name=rx.medication_name, patient=session["patient"], status="active",
+        ).count() == 1
+
+    def test_service_layer_guards_a_second_decision_even_bypassing_the_view(
+        self, session, doctor, pharmacy,
+    ):
+        # Regression: services.approve() used to trust its caller and had no
+        # status check of its own — calling it twice created two active
+        # prescriptions for the same medication. The view already guards the
+        # common case (must_be_pending); this proves the service itself is
+        # now also safe against a caller that skips that check (e.g. a race
+        # between two near-simultaneous clicks).
+        from refills import services
+        from refills.models import Prescription
+        rx = make_rx(session["patient"], doctor)
+        request = RefillRequest.objects.create(
+            prescription=rx, patient=session["patient"], pharmacy=pharmacy,
+            status="pending_approval",
+        )
+        services.approve(request, doctor)
+        with pytest.raises(services.RefillRequestNotPending):
+            services.approve(request, doctor)
+        assert Prescription.objects.filter(
+            medication_name=rx.medication_name, patient=session["patient"], status="active",
+        ).count() == 1
+
+        request2 = RefillRequest.objects.create(
+            prescription=make_rx(session["patient"], doctor, medication_name="Losartan"),
+            patient=session["patient"], pharmacy=pharmacy, status="rejected",
+        )
+        with pytest.raises(services.RefillRequestNotPending):
+            services.reject(request2, doctor, "already handled")
+        with pytest.raises(services.RefillRequestNotPending):
+            services.request_visit(request2, doctor)
 
 
 class TestGenericCRUD:
