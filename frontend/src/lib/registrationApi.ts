@@ -102,7 +102,14 @@ export async function uploadDocument(
   token: string,
   file: File,
   docType: string,
-): Promise<{ id: number; doc_type: string; extraction_status: string }> {
+): Promise<{
+  id: number
+  doc_type: string
+  extraction_status: string
+  // True when a legible insurance card also created the policy record —
+  // false means the UI should ask the patient to type provider + policy number.
+  policy_created: boolean
+}> {
   const form = new FormData()
   form.append('file', file)
   form.append('doc_type', docType)

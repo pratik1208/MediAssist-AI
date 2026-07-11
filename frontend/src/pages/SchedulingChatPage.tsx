@@ -5,10 +5,12 @@ import ChatWindow from '../components/ChatWindow'
 import PatientPicker from '../components/PatientPicker'
 
 export default function SchedulingChatPage() {
-  const [patientId, setPatientId] = useState<number | null>(null)
   const location = useLocation()
-  // Handed off from the triage result screen ("Book an appointment").
-  const prefill = (location.state as { prefill?: string } | null)?.prefill
+  // Handed off from the triage result ("Book an appointment") or from a
+  // completed registration (which passes the new patient's id).
+  const handoff = location.state as { prefill?: string; patientId?: number } | null
+  const [patientId, setPatientId] = useState<number | null>(handoff?.patientId ?? null)
+  const prefill = handoff?.prefill
 
   return (
     <div className="mx-auto flex h-screen max-w-3xl flex-col bg-slate-50">

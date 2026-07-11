@@ -44,6 +44,7 @@ export default function RegistrationChatPage() {
   const [stage, setStage] = useState<RegistrationStage>('demographics')
   const [hints, setHints] = useState<UiHint[]>([])
   const [complete, setComplete] = useState(false)
+  const [patientId, setPatientId] = useState<number | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [streamText, setStreamText] = useState('')
@@ -63,6 +64,7 @@ export default function RegistrationChatPage() {
       setStage(state.stage)
       setHints(state.hints ?? [])
       setComplete(state.complete ?? false)
+      setPatientId(state.patientId ?? null)
       setOtpSent(state.otpSent ?? false)
       nextId = state.items.length + 1
       return
@@ -76,10 +78,10 @@ export default function RegistrationChatPage() {
   useEffect(() => {
     if (token) {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(
-        { token, items, stage, hints, complete, otpSent },
+        { token, items, stage, hints, complete, patientId, otpSent },
       ))
     }
-  }, [token, items, stage, hints, complete, otpSent])
+  }, [token, items, stage, hints, complete, patientId, otpSent])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -119,6 +121,7 @@ export default function RegistrationChatPage() {
         } else if ('done' in event) {
           setStage(event.stage)
           setHints(event.ui_hints)
+          if (event.patient_id !== null) setPatientId(event.patient_id)
           if (event.registration_complete) setComplete(true)
         }
       })
@@ -155,9 +158,16 @@ export default function RegistrationChatPage() {
     if (!token) return
     const docType = uploadHint?.upload ?? 'insurance_card'
     try {
-      await uploadDocument(token, file, docType)
-      append('success', `✓ ${docType.replace('_', ' ')} uploaded — we'll read the details from it.`)
-      await send(`I've uploaded my ${docType.replace('_', ' ')}.`, false)
+      const result = await uploadDocument(token, file, docType)
+      if (result.policy_created) {
+        append('success', '✓ Insurance card read — your policy is on file.')
+        await send(`I've uploaded my ${docType.replace('_', ' ')} and it was read successfully.`, false)
+      } else {
+        append('note',
+          "We saved your document but couldn't read the details from it. " +
+          'Please type your insurance provider name and policy number instead — ' +
+          'for example: "My provider is Star Health, policy number SH-12345".')
+      }
     } catch {
       append('error', "The upload didn't go through — please try another image or PDF.")
     }
@@ -199,7 +209,11 @@ export default function RegistrationChatPage() {
             <button onClick={restart} className="text-slate-500 hover:text-teal-700">
               Start over
             </button>
-            <Link to="/schedule" className="font-medium text-teal-700 hover:underline">
+            <Link
+              to="/schedule"
+              state={{ patientId }}
+              className="font-medium text-teal-700 hover:underline"
+            >
               Book appointment →
             </Link>
           </nav>
@@ -262,7 +276,7 @@ export default function RegistrationChatPage() {
         {complete && (
           <div className="mx-auto rounded-2xl border border-green-300 bg-green-50 px-4 py-3 text-center text-sm text-green-900">
             🎉 Registration complete! A clinician will review your information.{' '}
-            <Link to="/schedule" className="font-semibold underline">
+            <Link to="/schedule" state={{ patientId }} className="font-semibold underline">
               Book an appointment
             </Link>
           </div>
