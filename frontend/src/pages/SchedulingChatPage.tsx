@@ -26,6 +26,9 @@ export default function SchedulingChatPage() {
           <Link to="/refills" className="text-sm font-medium text-teal-700 hover:underline">
             Refills
           </Link>
+          <Link to="/referrals" className="text-sm font-medium text-teal-700 hover:underline">
+            Referrals
+          </Link>
           <Link to="/register" className="text-sm font-medium text-teal-700 hover:underline">
             New patient? Register →
           </Link>

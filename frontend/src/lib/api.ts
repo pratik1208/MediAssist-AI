@@ -39,6 +39,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getDoctors = () => request<Doctor[]>('/api/doctors')
 export const getPatients = () => request<Patient[]>('/api/patients')
+export const getAppointment = (id: number) => request<Appointment>(`/api/appointments/${id}`)
 
 export const createAppointment = (body: AppointmentCreate) =>
   request<Appointment>('/api/appointments', {

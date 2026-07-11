@@ -85,9 +85,14 @@ export default function RefillQueuePage() {
             Renewal requests awaiting a physician decision
           </p>
         </div>
-        <Link to="/staff/escalations" className="text-sm font-medium text-teal-700 hover:underline">
-          Escalation queue →
-        </Link>
+        <nav className="flex items-center gap-4">
+          <Link to="/staff/referrals" className="text-sm font-medium text-teal-700 hover:underline">
+            Referrals →
+          </Link>
+          <Link to="/staff/escalations" className="text-sm font-medium text-teal-700 hover:underline">
+            Escalation queue →
+          </Link>
+        </nav>
       </header>
 
       <main className="mt-6 space-y-3">

@@ -145,6 +145,9 @@ export default function RefillsPage() {
           <Link to="/triage" className="font-medium text-teal-700 hover:underline">
             Symptom check
           </Link>
+          <Link to="/referrals" className="font-medium text-teal-700 hover:underline">
+            Referrals
+          </Link>
           <Link to="/schedule" className="font-medium text-teal-700 hover:underline">
             Book appointment →
           </Link>

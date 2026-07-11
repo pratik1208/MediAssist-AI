@@ -2,6 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import EscalationQueuePage from './pages/EscalationQueuePage'
+import PatientReferralsPage from './pages/PatientReferralsPage'
+import ReferralDashboardPage from './pages/ReferralDashboardPage'
+import ReferralDetailPage from './pages/ReferralDetailPage'
 import RefillQueuePage from './pages/RefillQueuePage'
 import RefillsPage from './pages/RefillsPage'
 import RegistrationChatPage from './pages/RegistrationChatPage'
@@ -20,8 +23,11 @@ function App() {
           <Route path="/register" element={<RegistrationChatPage />} />
           <Route path="/triage" element={<TriageChatPage />} />
           <Route path="/refills" element={<RefillsPage />} />
+          <Route path="/referrals" element={<PatientReferralsPage />} />
           <Route path="/staff/escalations" element={<EscalationQueuePage />} />
           <Route path="/staff/refills" element={<RefillQueuePage />} />
+          <Route path="/staff/referrals" element={<ReferralDashboardPage />} />
+          <Route path="/staff/referrals/:id" element={<ReferralDetailPage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
