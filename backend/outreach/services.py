@@ -378,6 +378,20 @@ def campaign_stats(campaign: Campaign) -> dict:
     scheduled = members.filter(state__in=["scheduled", "completed"]).count()
     completed = members.filter(state="completed").count()
 
+    # Per-channel breakdown for the analytics dashboard: how many messages
+    # actually went out on each channel. One grouped aggregate, not a
+    # per-member loop — the notification carries the channel (SentNotification
+    # uses "SMS"/"email"/"whatsapp"), so this survives at cohort scale (NFR-9).
+    by_channel = {
+        row["notification__channel"]: row["n"]
+        for row in (
+            OutboundMessage.objects
+            .filter(member__campaign=campaign)
+            .values("notification__channel")
+            .annotate(n=Count("id"))
+        )
+    }
+
     return {
         "identified": identified,
         "sent": sent,
@@ -386,4 +400,5 @@ def campaign_stats(campaign: Campaign) -> dict:
         "scheduled": scheduled,
         "completed": completed,
         "conversion_rate": round(scheduled / identified, 4) if identified else 0.0,
+        "by_channel": by_channel,
     }

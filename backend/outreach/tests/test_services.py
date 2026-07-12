@@ -350,3 +350,13 @@ class TestCampaignStats:
         stats = campaign_stats(campaign)
         assert stats["identified"] == 0
         assert stats["conversion_rate"] == 0.0
+        assert stats["by_channel"] == {}
+
+    def test_by_channel_breakdown_counts_sent_messages(self, campaign):
+        make_patient(dob=age_dob(70))
+        make_patient(dob=age_dob(70))
+        enroll_cohort(campaign)
+        dispatch_wave(campaign)  # channel_plan wave 0 is sms for both members
+        stats = campaign_stats(campaign)
+        # SentNotification records the channel as "SMS" (its own casing).
+        assert sum(stats["by_channel"].values()) == 2

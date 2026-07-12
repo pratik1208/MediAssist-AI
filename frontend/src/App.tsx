@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
+import CampaignAnalyticsPage from './pages/CampaignAnalyticsPage'
+import CampaignManagerPage from './pages/CampaignManagerPage'
 import EscalationQueuePage from './pages/EscalationQueuePage'
 import PatientAuthorizationsPage from './pages/PatientAuthorizationsPage'
 import PatientReferralsPage from './pages/PatientReferralsPage'
@@ -36,6 +38,8 @@ function App() {
           <Route path="/staff/priorauth" element={<PriorAuthQueuePage />} />
           <Route path="/staff/priorauth/tasks" element={<PriorAuthTasksPage />} />
           <Route path="/staff/priorauth/:id" element={<PriorAuthDetailPage />} />
+          <Route path="/staff/outreach" element={<CampaignManagerPage />} />
+          <Route path="/staff/outreach/:id" element={<CampaignAnalyticsPage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
