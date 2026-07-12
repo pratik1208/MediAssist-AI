@@ -204,11 +204,13 @@ def dispatch_wave(campaign: Campaign) -> dict:
         if now < anchor + timedelta(days=wait_days):
             continue  # not due yet
 
-        note = notify(
-            member.patient, "outreach_message",
-            {"name": member.patient.first_name, "reason": member.outreach_reason},
-            channel=step["channel"],
-        )
+        # render_message() returns fully-rendered, already-personalized text;
+        # passing it as notify()'s "template" works because render_template()
+        # falls back to using an unrecognized string as-is when there's no
+        # matching key in _TEMPLATES, and .format() is a no-op on a string
+        # with no {placeholders} left in it.
+        rendered = render_message(member, campaign.clinical_goal)
+        note = notify(member.patient, rendered, {}, channel=step["channel"])
         if note is not None:
             OutboundMessage.objects.create(member=member, notification=note, wave_number=wave_index)
             member.state = "contacted"
@@ -224,6 +226,38 @@ def dispatch_wave(campaign: Campaign) -> dict:
         CampaignMember.objects.filter(id__in=newly_unreachable_ids).update(state="unreachable")
 
     return {"queued": queued, "unreachable": len(newly_unreachable_ids)}
+
+
+# -- FR-O4 (Phase 4): AI-personalized message body, cached per (language, goal) --
+
+_MESSAGE_BODY_CACHE: dict[tuple[str, str], str] = {}
+
+
+def render_message(member: CampaignMember, template_goal: str) -> str:
+    """The per-patient message text: an AI-written body for this member's
+    language + the campaign's clinical goal, with "Hi {name}," prepended.
+
+    Cached per (language, template_goal) — personalization beyond the name
+    is deliberately light, so a 5,000-patient wave makes at most a handful
+    of AI calls (one per language actually present in the cohort), never
+    one per patient (NFR-9). An AI outage never blocks a wave: it falls
+    back to the plain, non-AI Phase 2 wording instead of leaving the
+    member unmessaged.
+    """
+    patient = member.patient
+    language = patient.preferred_language
+    cache_key = (language, template_goal)
+    body = _MESSAGE_BODY_CACHE.get(cache_key)
+    if body is None:
+        try:
+            from outreach.ai import render_outreach_message_body  # local: keeps AI optional
+            body = render_outreach_message_body(template_goal, language)["body"]
+        except Exception:
+            log.warning("[OUTREACH RENDER] AI message generation failed for goal=%r "
+                       "lang=%r — using fallback wording", template_goal, language)
+            body = f"{template_goal}. Reply to let us know, or call the clinic to book. Reply STOP to opt out."
+        _MESSAGE_BODY_CACHE[cache_key] = body
+    return f"Hi {patient.first_name}, {body}"
 
 
 # -- FR-O5/Edge Cases 13-14: inbound response handling -------------------------
@@ -273,6 +307,56 @@ def handle_response_action(member: CampaignMember, intent: str, *,
         response.save(update_fields=["classified_intent", "handled", "snooze_until"])
 
     return member
+
+
+# -- FR-O5 (Phase 4): classify a raw reply, then run the state machine --------
+
+# Standard US carrier/SMS-compliance opt-out keywords (TCPA/CTIA short-code
+# rules): these must always work, model or no model, so they're checked
+# BEFORE ever calling the AI -- opt-out compliance can't depend on an LLM
+# being reachable. Deliberately an exact match on the whole normalized
+# message, not a substring: "please don't stop asking, I'll book eventually"
+# must NOT trip this, so more natural phrasings are left to the classifier.
+_HARD_STOP_KEYWORDS = frozenset({"stop", "stopall", "unsubscribe", "cancel", "end", "quit"})
+
+
+def _looks_like_hard_stop(text: str) -> bool:
+    return text.strip().strip(".!?").lower() in _HARD_STOP_KEYWORDS
+
+
+def classify_and_handle_response(member: CampaignMember, text: str,
+                                  response: InboundResponse | None = None) -> str:
+    """Turn a raw inbound reply into a classified intent and run the state
+    machine. The failure mode to guard hardest against (per the build
+    step) is misclassifying an opt-out as anything else, so this checks
+    the deterministic keyword list first; only genuinely ambiguous text
+    reaches the AI classifier. Any AI failure, or a claimed 'snooze' with
+    no date the model could actually resolve, falls back to 'unclear' --
+    the one intent with zero side effects -- rather than guessing.
+    """
+    if _looks_like_hard_stop(text):
+        intent, snooze_until = "opt_out", None
+    else:
+        today = timezone.localdate().isoformat()
+        try:
+            from outreach.ai import classify_response as ai_classify_response  # local: keeps AI optional
+            result = ai_classify_response(text, today)
+            intent = result.get("intent") or "unclear"
+            snooze_until = None
+            if intent == "snooze":
+                raw_date = result.get("snooze_until")
+                try:
+                    snooze_until = date.fromisoformat(raw_date) if raw_date else None
+                except ValueError:
+                    snooze_until = None
+                if snooze_until is None:
+                    intent = "unclear"  # claimed snooze but no resolvable date -- don't guess
+        except Exception:
+            log.warning("[OUTREACH CLASSIFY] AI classification failed — treating as unclear")
+            intent, snooze_until = "unclear", None
+
+    handle_response_action(member, intent, snooze_until=snooze_until, response=response)
+    return intent
 
 
 # -- FR-O7: funnel stats -------------------------------------------------------
