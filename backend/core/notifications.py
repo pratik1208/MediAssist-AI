@@ -41,6 +41,7 @@ _TEMPLATES: dict[str, str] = {
     "priorauth_approved": "Hi {name}, your insurance authorization for {treatment} was approved. We'll be in touch to schedule it.",
     "priorauth_denied": "Hi {name}, your insurance authorization for {treatment} was not approved: {reason}. Please contact the clinic to discuss next steps.",
     "priorauth_booking_offer": "Hi {name}, your {treatment} was approved by your insurance. Would you like me to help you book an appointment for it?",
+    "outreach_message": "Hi {name}, {reason}. Reply to let us know, or call the clinic to book. Reply STOP to opt out.",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 
