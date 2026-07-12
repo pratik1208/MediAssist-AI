@@ -7,6 +7,11 @@ class InsurancePolicy(models.Model):
     policy_number = models.CharField(max_length=100)
     member_id = models.CharField(max_length=100, null=True, blank=True)
     provider_name = models.CharField(max_length=100)
+    # Nullable: not every policy has plan-level detail on file. Needed for
+    # priorauth's PayerRule matching (Agent 6 FR-P1 — "based on the
+    # patient's insurance PLAN") — a plan-specific rule only ever matches a
+    # policy whose plan is actually known.
+    plan = models.CharField(max_length=120, null=True, blank=True)
     coverage_details = models.TextField()
     # Nullable: a policy dictated in chat has provider + number but no dates;
     # they arrive later from the card extraction or the insurance endpoint.
@@ -55,6 +60,9 @@ class UploadedDocument(models.Model):
             # (Agent 5 FR-F10) — distinct from referral_letter, which goes
             # the other direction (PCP -> specialist).
             ("consultation_report", "consultation_report"),
+            # SCHEMA.md always specified this; the model just never had it
+            # until priorauth's evidence gathering (Agent 6 FR-P2) needed it.
+            ("imaging_report", "imaging_report"),
             ("other", "other"),
         ],
     )

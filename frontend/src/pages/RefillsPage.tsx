@@ -148,6 +148,9 @@ export default function RefillsPage() {
           <Link to="/referrals" className="font-medium text-teal-700 hover:underline">
             Referrals
           </Link>
+          <Link to="/authorizations" className="font-medium text-teal-700 hover:underline">
+            Authorizations
+          </Link>
           <Link to="/schedule" className="font-medium text-teal-700 hover:underline">
             Book appointment →
           </Link>

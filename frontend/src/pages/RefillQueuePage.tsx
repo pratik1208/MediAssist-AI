@@ -89,6 +89,9 @@ export default function RefillQueuePage() {
           <Link to="/staff/referrals" className="text-sm font-medium text-teal-700 hover:underline">
             Referrals →
           </Link>
+          <Link to="/staff/priorauth" className="text-sm font-medium text-teal-700 hover:underline">
+            Prior authorizations →
+          </Link>
           <Link to="/staff/escalations" className="text-sm font-medium text-teal-700 hover:underline">
             Escalation queue →
           </Link>

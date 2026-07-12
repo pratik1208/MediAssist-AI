@@ -49,7 +49,8 @@ INSTALLED_APPS = [
     "registration",
     "triage",
     "refills",
-    "referrals"
+    "referrals",
+    "priorauth"
 ]
 
 MIDDLEWARE = [

@@ -66,3 +66,18 @@ class SchedulingConfig(AppConfig):
                     "name": patient.first_name,
                     "medication": medication or "your medication",
                 })
+
+        @subscribe("priorauth.approved")
+        def _offer_booking_after_priorauth_approval(patient_id, treatment=None, **_):
+            """Insurance approved the treatment -> invite booking (FR-P7
+            "hand off to Scheduling"). Same offer-not-auto-book pattern as
+            the other two handoffs above: priorauth doesn't know which
+            doctor/slot fits an arbitrary approved treatment, so inviting
+            the patient into the existing booking chat is the consistent,
+            correct handoff — not a silently auto-created appointment."""
+            patient = Patient.objects.filter(id=patient_id).first()
+            if patient:
+                notify(patient, "priorauth_booking_offer", {
+                    "name": patient.first_name,
+                    "treatment": treatment or "your approved treatment",
+                })

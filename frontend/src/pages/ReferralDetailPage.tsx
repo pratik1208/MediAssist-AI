@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
 import { getDoctors, getPatients } from '../lib/api'
+import { getReferralAuthorizations } from '../lib/priorauthApi'
 import {
   acceptReferral,
   bookReferralVisit,
@@ -13,6 +14,11 @@ import {
   uploadConsultationReportFile,
   uploadConsultationReportJson,
 } from '../lib/referralsApi'
+
+const PA_STATUS_STYLE: Record<string, string> = {
+  approved: 'bg-green-100 text-green-800',
+  denied: 'bg-red-100 text-red-800',
+}
 
 const STATUS_LABEL: Record<string, string> = {
   created: 'Created', accepted: 'Accepted', appointment_scheduled: 'Appointment scheduled',
@@ -43,6 +49,11 @@ export default function ReferralDetailPage() {
     queryKey: ['referralCandidates', referralId],
     queryFn: () => getSpecialistCandidates(referralId),
     enabled: timeline.data?.status === 'created',
+  })
+  const authorizations = useQuery({
+    queryKey: ['referralAuthorizations', referralId],
+    queryFn: () => getReferralAuthorizations(referralId),
+    enabled: !!timeline.data,
   })
 
   const refresh = () => {
@@ -134,6 +145,31 @@ export default function ReferralDetailPage() {
           {r.stalled ? '⚠ stalled' : STATUS_LABEL[r.status]}
         </span>
       </header>
+
+      {/* -- PA status column (Phase 5): any authorizations tied to orders
+           linked to this referral -- */}
+      {(authorizations.data?.length ?? 0) > 0 && (
+        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-700">Prior authorization</h2>
+          <div className="mt-2 space-y-1">
+            {authorizations.data!.map((a) => (
+              <Link
+                key={a.id}
+                to={`/staff/priorauth/${a.id}`}
+                className="flex items-center justify-between rounded-lg px-2 py-1 text-sm
+                           hover:bg-slate-50"
+              >
+                <span className="text-slate-700">{a.treatment ?? a.order_type}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  PA_STATUS_STYLE[a.status] ?? 'bg-slate-200 text-slate-700'
+                }`}>
+                  {a.status_display}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* -- timeline -- */}
       <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

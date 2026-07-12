@@ -258,7 +258,7 @@ class SubmitInsuranceAPIView(RegistrationSessionAPIView):
     """
 
     REQUIRED = ("policy_number", "provider_name", "coverage_start", "coverage_end")
-    ALLOWED = REQUIRED + ("member_id", "coverage_details")
+    ALLOWED = REQUIRED + ("member_id", "coverage_details", "plan")
 
     def post(self, request):
         patient, error = self.patient_or_error()

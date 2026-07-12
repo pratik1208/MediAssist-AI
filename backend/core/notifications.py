@@ -38,6 +38,9 @@ _TEMPLATES: dict[str, str] = {
     "triage_booking_offer": "Hi {name}, based on your assessment you should see a doctor {urgency}. Would you like me to book an appointment for you?",
     "refill_visit_booking_offer": "Hi {name}, your doctor would like to see you before refilling {medication}. Would you like me to book an appointment?",
     "referral_missed_appointment": "Hi {name}, we noticed you missed your {specialty} specialist appointment. Would you like to reschedule?",
+    "priorauth_approved": "Hi {name}, your insurance authorization for {treatment} was approved. We'll be in touch to schedule it.",
+    "priorauth_denied": "Hi {name}, your insurance authorization for {treatment} was not approved: {reason}. Please contact the clinic to discuss next steps.",
+    "priorauth_booking_offer": "Hi {name}, your {treatment} was approved by your insurance. Would you like me to help you book an appointment for it?",
     # "appointment_reminder": "Hi {name}, your appointment is on {date}.",
 }
 

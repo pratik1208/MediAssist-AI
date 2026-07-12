@@ -4,53 +4,55 @@ import { Link } from 'react-router-dom'
 
 import { getDoctors, getPatients } from '../lib/api'
 import {
-  createReferral,
-  getReferralQueue,
-  SPECIALTIES,
-  URGENCIES,
-} from '../lib/referralsApi'
-import type { ReferralStatus } from '../lib/referralsApi'
+  createTreatmentOrder,
+  getAuthorizationQueue,
+  ORDER_TYPES,
+} from '../lib/priorauthApi'
+import type { AuthorizationStatus } from '../lib/priorauthApi'
 
-const STATUS_STYLE: Record<ReferralStatus, string> = {
-  created: 'bg-slate-200 text-slate-700',
-  accepted: 'bg-sky-100 text-sky-800',
-  appointment_scheduled: 'bg-sky-100 text-sky-800',
-  patient_confirmed: 'bg-teal-100 text-teal-800',
-  visit_completed: 'bg-teal-100 text-teal-800',
-  report_received: 'bg-teal-100 text-teal-800',
-  closed: 'bg-green-100 text-green-800',
-  stalled: 'bg-red-600 text-white',
+const STATUS_STYLE: Record<AuthorizationStatus, string> = {
+  detected: 'bg-slate-200 text-slate-700',
+  gathering_evidence: 'bg-slate-200 text-slate-700',
+  ready_for_review: 'bg-amber-100 text-amber-800',
+  submitted: 'bg-sky-100 text-sky-800',
+  under_review: 'bg-sky-100 text-sky-800',
+  info_requested: 'bg-amber-100 text-amber-800',
+  approved: 'bg-green-100 text-green-800',
+  denied: 'bg-red-100 text-red-800',
 }
 
-const EMPTY_FORM = { patient_id: '', doctor_id: '', specialty: SPECIALTIES[0],
-                     reason: '', urgency: 'routine' }
+const EMPTY_FORM = { patient_id: '', doctor_id: '', order_type: ORDER_TYPES[0] as string,
+                     cpt_code: '', icd10_code: '', medication: '' }
 
-export default function ReferralDashboardPage() {
+export default function PriorAuthQueuePage() {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState<{
-    patient_id: string; doctor_id: string; specialty: string; reason: string; urgency: string
-  }>(EMPTY_FORM)
+  const [form, setForm] = useState(EMPTY_FORM)
   const [statusFilter, setStatusFilter] = useState('')
   const [formError, setFormError] = useState('')
+  const [formResult, setFormResult] = useState('')
   const queryClient = useQueryClient()
 
-  const referrals = useQuery({
-    queryKey: ['referralQueue', statusFilter],
-    queryFn: () => getReferralQueue(statusFilter || undefined),
+  const queue = useQuery({
+    queryKey: ['authorizationQueue', statusFilter],
+    queryFn: () => getAuthorizationQueue(statusFilter || undefined),
     refetchInterval: 15_000,
   })
   const patients = useQuery({ queryKey: ['patients'], queryFn: getPatients })
   const doctors = useQuery({ queryKey: ['doctors'], queryFn: getDoctors })
 
   const create = useMutation({
-    mutationFn: createReferral,
-    onSuccess: () => {
-      setForm(EMPTY_FORM)
-      setShowForm(false)
+    mutationFn: createTreatmentOrder,
+    onSuccess: (result) => {
       setFormError('')
-      void queryClient.invalidateQueries({ queryKey: ['referralQueue'] })
+      setFormResult(
+        result.authorization_required
+          ? `Order #${result.order_id} created — authorization required (status: ${result.status}).`
+          : `Order #${result.order_id} created — no authorization required.`,
+      )
+      setForm(EMPTY_FORM)
+      void queryClient.invalidateQueries({ queryKey: ['authorizationQueue'] })
     },
-    onError: () => setFormError("Couldn't create the referral — check the fields and try again."),
+    onError: () => setFormError("Couldn't create the order — check the fields and try again."),
   })
 
   const patientName = (id: number) => {
@@ -58,34 +60,30 @@ export default function ReferralDashboardPage() {
     return p ? `${p.first_name} ${p.last_name}` : `#${id}`
   }
 
-  const forbidden =
-    referrals.isError && (referrals.error as { status?: number })?.status === 403
+  const forbidden = queue.isError && (queue.error as { status?: number })?.status === 403
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl bg-slate-50 px-4 py-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Referral pipeline</h1>
+          <h1 className="text-xl font-bold text-slate-900">Prior authorizations</h1>
           <p className="text-sm text-slate-500">
-            Create referrals and track them from created to closed
+            Treatment orders and their insurance authorization status
           </p>
         </div>
         <nav className="flex items-center gap-4 text-sm">
-          <Link to="/staff/refills" className="font-medium text-teal-700 hover:underline">
-            Refill approvals →
+          <Link to="/staff/priorauth/tasks" className="font-medium text-teal-700 hover:underline">
+            Staged tasks →
           </Link>
-          <Link to="/staff/priorauth" className="font-medium text-teal-700 hover:underline">
-            Prior authorizations →
-          </Link>
-          <Link to="/staff/escalations" className="font-medium text-teal-700 hover:underline">
-            Escalation queue →
+          <Link to="/staff/referrals" className="font-medium text-teal-700 hover:underline">
+            Referrals →
           </Link>
           <button
             onClick={() => setShowForm((v) => !v)}
             className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white
                        transition hover:bg-teal-700"
           >
-            + New Referral
+            + New Order
           </button>
         </nav>
       </header>
@@ -94,13 +92,18 @@ export default function ReferralDashboardPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            if (!form.patient_id || !form.doctor_id || !form.reason.trim()) {
-              setFormError('Please fill in patient, referring doctor, and reason.')
+            if (!form.patient_id) {
+              setFormError('Please select a patient.')
               return
             }
+            setFormResult('')
             create.mutate({
-              patient_id: Number(form.patient_id), doctor_id: Number(form.doctor_id),
-              specialty: form.specialty, reason: form.reason.trim(), urgency: form.urgency,
+              patient_id: Number(form.patient_id),
+              doctor_id: form.doctor_id ? Number(form.doctor_id) : undefined,
+              order_type: form.order_type,
+              cpt_code: form.cpt_code.trim() || undefined,
+              icd10_code: form.icd10_code.trim() || undefined,
+              medication: form.medication.trim() || undefined,
             })
           }}
           className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4
@@ -120,44 +123,53 @@ export default function ReferralDashboardPage() {
             </select>
           </label>
           <label className="text-sm text-slate-600">
-            Referring doctor
+            Ordering doctor (optional)
             <select
               value={form.doctor_id}
               onChange={(e) => setForm({ ...form, doctor_id: e.target.value })}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             >
-              <option value="">— select —</option>
+              <option value="">— none —</option>
               {doctors.data?.map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
           </label>
           <label className="text-sm text-slate-600">
-            Specialty needed
+            Order type
             <select
-              value={form.specialty}
-              onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+              value={form.order_type}
+              onChange={(e) => setForm({ ...form, order_type: e.target.value })}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             >
-              {SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+          </label>
+          <div />
+          <label className="text-sm text-slate-600">
+            CPT code
+            <input
+              value={form.cpt_code}
+              onChange={(e) => setForm({ ...form, cpt_code: e.target.value })}
+              placeholder="e.g. 70551"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+            />
           </label>
           <label className="text-sm text-slate-600">
-            Urgency
-            <select
-              value={form.urgency}
-              onChange={(e) => setForm({ ...form, urgency: e.target.value })}
+            ICD-10 code
+            <input
+              value={form.icd10_code}
+              onChange={(e) => setForm({ ...form, icd10_code: e.target.value })}
+              placeholder="e.g. M25.561"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
-            >
-              {URGENCIES.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+            />
           </label>
           <label className="text-sm text-slate-600 sm:col-span-2">
-            Reason
+            Medication
             <input
-              value={form.reason}
-              onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              placeholder="e.g. chest pain on exertion"
+              value={form.medication}
+              onChange={(e) => setForm({ ...form, medication: e.target.value })}
+              placeholder="e.g. atorvastatin 20mg"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             />
           </label>
@@ -168,9 +180,10 @@ export default function ReferralDashboardPage() {
               className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white
                          transition hover:bg-teal-700 disabled:opacity-40"
             >
-              Create referral
+              Create order
             </button>
             {formError && <span className="ml-3 text-sm text-amber-700">{formError}</span>}
+            {formResult && <span className="ml-3 text-sm text-teal-700">{formResult}</span>}
           </div>
         </form>
       )}
@@ -190,7 +203,7 @@ export default function ReferralDashboardPage() {
       </div>
 
       <main className="mt-3 space-y-2">
-        {referrals.isPending && <p className="text-sm text-slate-400">Loading referrals…</p>}
+        {queue.isPending && <p className="text-sm text-slate-400">Loading requests…</p>}
 
         {forbidden && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -202,42 +215,40 @@ export default function ReferralDashboardPage() {
             with a staff account in this browser, then reload this page.
           </div>
         )}
-        {referrals.isError && !forbidden && (
-          <p className="text-sm text-amber-700">Couldn't load referrals — is the backend running?</p>
+        {queue.isError && !forbidden && (
+          <p className="text-sm text-amber-700">Couldn't load requests — is the backend running?</p>
         )}
-        {referrals.data?.length === 0 && (
+        {queue.data?.length === 0 && (
           <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-            No referrals yet.
+            No authorization requests yet.
           </p>
         )}
 
-        {referrals.data?.map((r) => (
+        {queue.data?.map((r) => (
           <Link
             key={r.id}
-            to={`/staff/referrals/${r.id}`}
-            className={`block rounded-xl border p-4 shadow-sm transition hover:shadow-md ${
-              r.stalled ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'
-            }`}
+            to={`/staff/priorauth/${r.id}`}
+            className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm
+                       transition hover:shadow-md"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-900">
                   {patientName(r.patient_id)}
                 </span>
-                <span className="text-sm text-slate-600">→ {r.specialty_needed}</span>
-                {r.specialist && <span className="text-xs text-slate-400">with {r.specialist}</span>}
-                {r.referring_doctor === null && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                    🩺 from triage — needs confirmation
-                  </span>
-                )}
+                <span className="text-sm text-slate-600">· {r.order_type}</span>
+                {r.treatment && <span className="text-xs text-slate-400">({r.treatment})</span>}
               </div>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[r.status]}`}>
-                {r.stalled ? '⚠ stalled' : r.status_display}
+                {r.status_display}
               </span>
             </div>
+            {r.denial_reason && (
+              <p className="mt-1 text-xs text-red-700">Denied: {r.denial_reason}</p>
+            )}
             <p className="mt-1 text-xs text-slate-400">
-              {r.reason} · {r.urgency} · created {new Date(r.created_at).toLocaleDateString()}
+              created {new Date(r.created_at).toLocaleDateString()}
+              {r.external_reference && ` · ref ${r.external_reference}`}
             </p>
           </Link>
         ))}

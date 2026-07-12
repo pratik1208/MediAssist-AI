@@ -230,10 +230,14 @@ ROUTE_FOR_DISPOSITION = {
 
 # Routing reasons beyond urgency (FR-T7). The AI layer can set
 # findings["route_hint"] when the complaint is really about one of these.
+# FR-T7 names five downstream routes; "diagnostics" (Agent 6 Phase 6) was the
+# one missing until priorauth needed it — same completion the other three
+# already had.
 ROUTE_FOR_HINT = {
     "specialist": "referrals",
     "meds_issue": "refills",
     "preventive": "caregaps",
+    "diagnostics": "priorauth",
 }
 
 

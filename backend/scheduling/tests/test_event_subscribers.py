@@ -43,3 +43,20 @@ class TestRefillVisitSubscriber:
         note = SentNotification.objects.filter(patient=patient).latest("id")
         assert "before refilling Amlodipine" in note.rendered_content
         assert "book an appointment" in note.rendered_content
+
+
+class TestPriorauthApprovalSubscriber:
+    """FR-P7 "hand off to Scheduling" (Agent 6 Phase 6) — an offer, not a
+    silent auto-booked appointment, same pattern as the other two above."""
+
+    def test_priorauth_approved_offers_booking(self, patient):
+        emit("priorauth.approved", request_id=1, patient_id=patient.id,
+             order_id=1, treatment="MRI 70551")
+        note = SentNotification.objects.filter(patient=patient).latest("id")
+        assert "MRI 70551" in note.rendered_content
+        assert "book" in note.rendered_content.lower()
+
+    def test_missing_treatment_falls_back_to_generic_wording(self, patient):
+        emit("priorauth.approved", request_id=1, patient_id=patient.id, order_id=1)
+        note = SentNotification.objects.filter(patient=patient).latest("id")
+        assert "your approved treatment" in note.rendered_content

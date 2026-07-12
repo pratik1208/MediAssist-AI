@@ -59,6 +59,9 @@ export default function EscalationQueuePage() {
           <Link to="/staff/referrals" className="font-medium text-teal-700 hover:underline">
             Referrals →
           </Link>
+          <Link to="/staff/priorauth" className="font-medium text-teal-700 hover:underline">
+            Prior authorizations →
+          </Link>
           <Link to="/triage" className="font-medium text-teal-700 hover:underline">
             Patient triage →
           </Link>

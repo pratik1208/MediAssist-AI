@@ -81,6 +81,9 @@ export default function PatientReferralsPage() {
           <Link to="/refills" className="font-medium text-teal-700 hover:underline">
             Refills
           </Link>
+          <Link to="/authorizations" className="font-medium text-teal-700 hover:underline">
+            Authorizations
+          </Link>
           <Link to="/schedule" className="font-medium text-teal-700 hover:underline">
             Book appointment →
           </Link>
