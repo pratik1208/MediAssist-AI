@@ -108,6 +108,29 @@ class TestBuildCohort:
         make_patient()
         assert build_cohort({}).count() == 2
 
+    def test_preferred_language_in(self, db):
+        hindi = make_patient(preferred_language="hi")
+        make_patient(preferred_language="en")
+        marathi = make_patient(preferred_language="mr")
+        result = set(build_cohort({"preferred_language_in": ["hi", "mr"]}).values_list("id", flat=True))
+        assert result == {hindi.id, marathi.id}
+
+    def test_exclude_patient_ids(self, db):
+        keep = make_patient()
+        drop = make_patient()
+        result = set(build_cohort({"exclude_patient_ids": [drop.id]}).values_list("id", flat=True))
+        assert result == {keep.id}
+
+    def test_age_cutoff_is_leap_day_safe(self, db, monkeypatch):
+        # The age math anchors on *today*. When today is Feb 29 and the cutoff
+        # year isn't a leap year, the naive today.replace(year=...) would
+        # raise — build_cohort must fall back to Feb 28, not crash.
+        import outreach.services as svc
+        monkeypatch.setattr(svc.timezone, "localdate", lambda: datetime.date(2024, 2, 29))
+        make_patient(dob=datetime.date(1950, 1, 1))  # comfortably older than 10
+        # 2024 - 10 = 2014 (not a leap year) -> exercises the Feb-28 fallback.
+        assert build_cohort({"age_min": 10}).count() == 1
+
     def test_one_query_regardless_of_cohort_size(self, db, doctor):
         for i in range(200):
             make_patient(dob=age_dob(70), contact_number=f"90000{i:05d}")

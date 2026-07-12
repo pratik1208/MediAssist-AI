@@ -283,3 +283,99 @@ class TestFullLifecycleOverHTTP:
         assert stats["identified"] == 1
         assert stats["sent"] == 1
         assert stats["responded"] == 1
+
+
+class TestValidationBranches:
+    def test_create_non_object_criteria_is_400(self, staff_client):
+        response = post_json(staff_client, STAFF_URL, {
+            "name": "x", "clinical_goal": "y",
+            "cohort_criteria": ["not", "an", "object"], "channel_plan": VALID_PLAN,
+        })
+        assert response.status_code == 400
+        assert "object" in response.json()["error"]
+
+    def test_channel_plan_must_be_non_empty_list(self, staff_client):
+        response = post_json(staff_client, STAFF_URL, {
+            "name": "x", "clinical_goal": "y", "cohort_criteria": {"age_min": 65},
+            "channel_plan": "sms",
+        })
+        assert response.status_code == 400
+        assert "non-empty list" in response.json()["error"]
+
+    def test_channel_plan_step_missing_channel_key(self, staff_client):
+        response = post_json(staff_client, STAFF_URL, {
+            "name": "x", "clinical_goal": "y", "cohort_criteria": {"age_min": 65},
+            "channel_plan": [{"wait_days": 3}],
+        })
+        assert response.status_code == 400
+
+    def test_channel_plan_negative_wait_days(self, staff_client):
+        response = post_json(staff_client, STAFF_URL, {
+            "name": "x", "clinical_goal": "y", "cohort_criteria": {"age_min": 65},
+            "channel_plan": [{"channel": "sms", "wait_days": -3}],
+        })
+        assert response.status_code == 400
+        assert "wait_days" in response.json()["error"]
+
+    def test_preview_non_object_criteria_is_400(self, staff_client):
+        response = post_json(staff_client, f"{STAFF_URL}preview-cohort/",
+                             {"cohort_criteria": "age_min=65"})
+        assert response.status_code == 400
+
+    def test_list_status_filter(self, staff_client, campaign):
+        # campaign fixture is a draft
+        running = Campaign.objects.create(
+            name="Live one", clinical_goal="x", cohort_criteria={},
+            channel_plan=VALID_PLAN, status="running",
+        )
+        response = staff_client.get(f"{STAFF_URL}?status=running")
+        assert [c["id"] for c in response.json()] == [running.id]
+
+
+class TestNotFoundBranches:
+    @pytest.mark.parametrize("path_suffix, method", [
+        ("999999/", "get"),
+        ("999999/stats/", "get"),
+        ("999999/members/", "get"),
+        ("999999/pause/", "post"),
+        ("999999/dispatch-wave/", "post"),
+    ])
+    def test_missing_campaign_is_404(self, staff_client, path_suffix, method):
+        url = f"{STAFF_URL}{path_suffix}"
+        response = (staff_client.get(url) if method == "get"
+                    else post_json(staff_client, url, {}))
+        assert response.status_code == 404
+
+
+class TestDispatchWaveEndpoint:
+    def test_running_campaign_dispatch_returns_counts(self, staff_client, campaign):
+        make_patient(dob=age_dob(70))
+        post_json(staff_client, f"{STAFF_URL}{campaign.id}/launch/", {})
+        # already dispatched wave 0 at launch; a second immediate call is due
+        # for nothing yet, but the endpoint still returns the counts shape.
+        response = post_json(staff_client, f"{STAFF_URL}{campaign.id}/dispatch-wave/", {})
+        assert response.status_code == 200
+        assert set(response.json()) == {"queued", "unreachable"}
+
+
+class TestWebhookErrorBranches:
+    @pytest.fixture
+    def contacted_member(self, campaign):
+        patient = make_patient(contact_number="9444444444")
+        campaign.status = "running"
+        campaign.save(update_fields=["status"])
+        return CampaignMember.objects.create(
+            campaign=campaign, patient=patient, state="contacted", outreach_reason="flu shot",
+        )
+
+    def test_explicit_intent_that_raises_is_400(self, client, contacted_member):
+        # explicit snooze intent with no snooze_until -> handle_response_action
+        # raises ValueError -> 400 (never reaches the AI classifier).
+        response = post_json(client, WEBHOOK_URL, {
+            "from": "9444444444", "text": "later", "intent": "snooze",
+        })
+        assert response.status_code == 400
+
+    def test_no_sender_and_no_member_id_is_404(self, client, contacted_member):
+        response = post_json(client, WEBHOOK_URL, {"text": "hello?"})
+        assert response.status_code == 404

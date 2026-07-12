@@ -34,6 +34,11 @@ from outreach.models import Campaign, CampaignMember, InboundResponse, OutboundM
 
 log = logging.getLogger("outreach")
 
+# How far ahead to look for an auto-booked slot when a member replies "book"
+# (FR-O6). Outreach is proactive/routine, so a couple of weeks is plenty.
+_AUTOBOOK_WINDOW_DAYS = 14
+_AUTOBOOK_DEFAULT_SPECIALTY = "General Medicine"
+
 _ALL_CHANNELS = ("sms", "email", "voice", "whatsapp")
 
 # A patient with an explicit False on every channel asked "stop contacting me
@@ -260,6 +265,52 @@ def render_message(member: CampaignMember, template_goal: str) -> str:
     return f"Hi {patient.first_name}, {body}"
 
 
+# -- FR-O6: auto-book the resulting appointment via Agent 1 --------------------
+
+def _resolve_booking_doctor(member: CampaignMember) -> Doctor | None:
+    """Which doctor an auto-booked outreach appointment goes to: the member's
+    assigned physician if there is one, else an active general-medicine
+    doctor, else any active doctor. None if the clinic has no active
+    doctors at all (then we can't auto-book and fall back to an offer)."""
+    if member.assigned_physician and member.assigned_physician.is_active:
+        return member.assigned_physician
+    gm = Doctor.objects.filter(specialty=_AUTOBOOK_DEFAULT_SPECIALTY, is_active=True).first()
+    return gm or Doctor.objects.filter(is_active=True).first()
+
+
+def book_member_appointment(member: CampaignMember):
+    """FR-O6: schedule the appointment a "book" reply asked for, automatically,
+    through Agent 1's shared booking door (same direct reuse referrals makes
+    of scheduling.services). Returns the Appointment, or None if we couldn't
+    auto-book (no doctor, or no open slot in the window) so the caller can
+    fall back to a staff/patient offer instead. Never raises on a booking
+    problem — a scheduling hiccup must not break response handling."""
+    from scheduling.services import book_appointment, find_available_slots
+
+    try:
+        doctor = _resolve_booking_doctor(member)
+        if doctor is None:
+            return None
+        # find_available_slots works in naive local wall-clock time (it builds
+        # candidates with datetime.combine and compares against
+        # timezone.localtime().replace(tzinfo=None)) — the same convention
+        # referrals._parse_datetime documents. Pass the window the same way.
+        now = timezone.localtime().replace(tzinfo=None)
+        slots = find_available_slots(doctor, now, now + timedelta(days=_AUTOBOOK_WINDOW_DAYS))
+        if not slots:
+            return None
+        start, end = slots[0]
+        return book_appointment(
+            doctor=doctor, patient=member.patient, start=start, end=end,
+            reason=f"Outreach: {member.outreach_reason}", urgency="routine",
+            source="outreach",
+        )
+    except Exception:
+        log.warning("[OUTREACH BOOK] auto-book failed for member %s — falling back to offer",
+                    member.id)
+        return None
+
+
 # -- FR-O5/Edge Cases 13-14: inbound response handling -------------------------
 
 def handle_response_action(member: CampaignMember, intent: str, *,
@@ -267,12 +318,24 @@ def handle_response_action(member: CampaignMember, intent: str, *,
                             response: InboundResponse | None = None) -> CampaignMember:
     """State machine driven by a classified inbound intent."""
     if intent == "book":
-        member.state = "responded"
-        member.save(update_fields=["state"])
-        emit(
-            "outreach.booking_requested", campaign_id=member.campaign_id, member_id=member.id,
-            patient_id=member.patient_id, outreach_reason=member.outreach_reason,
-        )
+        # FR-O6: try to schedule automatically. Success -> scheduled; if no
+        # doctor/slot is available, fall back to "responded" + an event so
+        # staff (or the patient, once After-Hours exists) can complete it.
+        appointment = book_member_appointment(member)
+        if appointment is not None:
+            member.state = "scheduled"
+            member.save(update_fields=["state"])
+            _audit(member.patient, "outreach.appointment_booked", {
+                "campaign_id": member.campaign_id, "member_id": member.id,
+                "appointment_id": appointment.id,
+            })
+        else:
+            member.state = "responded"
+            member.save(update_fields=["state"])
+            emit(
+                "outreach.booking_requested", campaign_id=member.campaign_id, member_id=member.id,
+                patient_id=member.patient_id, outreach_reason=member.outreach_reason,
+            )
     elif intent == "snooze":
         if snooze_until is None:
             raise ValueError("intent='snooze' requires snooze_until")

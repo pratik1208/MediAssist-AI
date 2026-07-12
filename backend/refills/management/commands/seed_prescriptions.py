@@ -11,7 +11,8 @@ check_eligibility() and every edge case (PRD 1, 2, 12) have fixture data:
   - controlled substance        -> NEVER auto-processed (Edge Case 12)
 
 Idempotent: rerunning updates by (patient, medication_name), never duplicates.
-Uses the first existing patient/doctor, or creates demo ones on an empty DB.
+Spreads the prescriptions across the first few existing patients (or creates a
+single demo patient/doctor on an otherwise-empty DB).
 """
 
 import datetime
@@ -81,6 +82,12 @@ class Command(BaseCommand):
             )
             self.stdout.write("created demo patient Rahul Sharma")
 
+        # Spread the prescriptions across the first few patients so more than
+        # one chart has medications (falls back to the single demo patient on
+        # an otherwise-empty DB). Each (patient, medication) pair stays stable
+        # across reruns, so idempotency holds.
+        patients = list(Patient.objects.order_by("id")[:3]) or [patient]
+
         doctor = Doctor.objects.order_by("id").first()
         if doctor is None:
             doctor = Doctor.objects.create(
@@ -99,7 +106,8 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"{'created' if created else 'updated'} pharmacy: {spec['name']}")
 
-        for medication, dose, quantity, overrides in PRESCRIPTIONS:
+        for i, (medication, dose, quantity, overrides) in enumerate(PRESCRIPTIONS):
+            patient = patients[i % len(patients)]
             defaults = {
                 "prescriber": doctor,
                 "dose": dose,
@@ -150,5 +158,5 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f"seeded {len(PHARMACIES)} pharmacies and {len(PRESCRIPTIONS)} "
-            f"prescriptions for {patient.first_name} {patient.last_name}"
+            f"prescriptions across {len(patients)} patient(s)"
         ))

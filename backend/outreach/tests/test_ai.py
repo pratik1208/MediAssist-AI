@@ -10,7 +10,12 @@ import pytest
 from django.utils import timezone
 
 from core.models import Patient
-from outreach.ai import CLASSIFY_RESPONSE, RENDER_OUTREACH_MESSAGE
+from outreach.ai import (
+    CLASSIFY_RESPONSE,
+    RENDER_OUTREACH_MESSAGE,
+    classify_response,
+    render_outreach_message_body,
+)
 from outreach.models import Campaign, CampaignMember, InboundResponse
 from outreach.services import (
     _looks_like_hard_stop,
@@ -54,6 +59,29 @@ class TestToolSchemas:
     def test_render_outreach_message_is_strict(self):
         assert RENDER_OUTREACH_MESSAGE["strict"] is True
         assert RENDER_OUTREACH_MESSAGE["input_schema"]["required"] == ["body"]
+
+
+class TestAiEntryPointsForwardToCallTool:
+    """The thin ai.py functions assemble the prompt/tool and delegate to
+    core.ai.call_tool. Patch call_tool (not the function) so the real
+    function body runs without a network call."""
+
+    def test_classify_response_forwards_tool_and_context(self):
+        with patch("outreach.ai.call_tool", return_value={"intent": "book",
+                   "snooze_until": None, "question_text": None}) as mock:
+            out = classify_response("yes ok", "2026-07-12")
+        assert out["intent"] == "book"
+        kwargs = mock.call_args.kwargs
+        assert kwargs["tool"] is CLASSIFY_RESPONSE
+        assert "2026-07-12" in kwargs["messages"][0]["content"]
+
+    def test_render_outreach_message_forwards_tool(self):
+        with patch("outreach.ai.call_tool", return_value={"body": "come in"}) as mock:
+            out = render_outreach_message_body("flu shot", "hi")
+        assert out["body"] == "come in"
+        kwargs = mock.call_args.kwargs
+        assert kwargs["tool"] is RENDER_OUTREACH_MESSAGE
+        assert "hi" in kwargs["messages"][0]["content"]
 
 
 class TestHardStopKeywordSafetyNet:
