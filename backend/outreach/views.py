@@ -53,7 +53,7 @@ class InboundResponseCRUDAPIView(BaseCRUDAPIView):
     model = InboundResponse
     serializer_class = InboundResponseSerializer
 
-
+# validates the outreach campaign's communication plan and returns an error message if the structure, channels, or wait times are invalid; otherwise it returns None
 def _validate_channel_plan(plan) -> str | None:
     """Return an error string, or None if the plan is valid."""
     if not isinstance(plan, list) or not plan:
@@ -67,8 +67,10 @@ def _validate_channel_plan(plan) -> str | None:
             return "wait_days must be a non-negative integer"
     return None
 
-
+# Campaign: An outreach program that contacts a group of patients for a specific healthcare goal.
 def _campaign_summary(campaign: Campaign) -> dict:
+    """In your Outreach Agent, a Campaign is an outreach program created by the clinic to contact a group of patients for a specific clinical goal."""
+
     return {
         "id": campaign.id,
         "name": campaign.name,

@@ -312,7 +312,7 @@ def book_member_appointment(member: CampaignMember):
 
 
 # -- FR-O5/Edge Cases 13-14: inbound response handling -------------------------
-
+# Take the patient's classified reply (book, snooze, opt out, question, etc.) and update the campaign member accordingly.
 def handle_response_action(member: CampaignMember, intent: str, *,
                             snooze_until: date | None = None,
                             response: InboundResponse | None = None) -> CampaignMember:
@@ -424,20 +424,13 @@ def classify_and_handle_response(member: CampaignMember, text: str,
 
 # -- FR-O7: funnel stats -------------------------------------------------------
 
+
 def campaign_stats(campaign: Campaign) -> dict:
     members = campaign.members
     identified = members.count()
     sent = members.exclude(state="identified").count()
-    delivered = (
-        OutboundMessage.objects
-        .filter(member__campaign=campaign, notification__status="delivered")
-        .values("member_id").distinct().count()
-    )
-    responded = (
-        InboundResponse.objects
-        .filter(member__campaign=campaign)
-        .values("member_id").distinct().count()
-    )
+    delivered = OutboundMessage.objects.filter(member__campaign=campaign, notification__status="delivered").values("member_id").distinct().count()
+    responded = InboundResponse.objects.filter(member__campaign=campaign).values("member_id").distinct().count()
     scheduled = members.filter(state__in=["scheduled", "completed"]).count()
     completed = members.filter(state="completed").count()
 
@@ -447,12 +440,7 @@ def campaign_stats(campaign: Campaign) -> dict:
     # uses "SMS"/"email"/"whatsapp"), so this survives at cohort scale (NFR-9).
     by_channel = {
         row["notification__channel"]: row["n"]
-        for row in (
-            OutboundMessage.objects
-            .filter(member__campaign=campaign)
-            .values("notification__channel")
-            .annotate(n=Count("id"))
-        )
+        for row in (OutboundMessage.objects.filter(member__campaign=campaign).values("notification__channel").annotate(n=Count("id")))
     }
 
     return {
