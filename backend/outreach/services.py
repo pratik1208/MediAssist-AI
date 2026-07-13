@@ -9,11 +9,10 @@ differs), but the *candidate selection* that feeds it is one query.
 build_cohort()'s criteria schema is deliberately narrower than the build
 step's example list (age range, condition codes, lab thresholds like
 HbA1c > 8, months since last visit, vaccination status, missed
-appointments): only age, last-visit recency, and missed-appointment count
-are backed by real data anywhere in this codebase today. There is no
-condition/lab/immunization model yet — Agent 8 (Care Gap Closure) is where
-SCHEMA.md's ClinicalGuideline/ClinicalEvent tables are expected to land, and
-this schema is meant to gain those keys then, not have them faked now. An
+appointments): only keys backed by real data are supported. Age, last-visit
+recency, and missed-appointment count came first; when Agent 8 (Care Gap
+Closure) landed SCHEMA.md's ClinicalEvent table, the schema gained the
+clinical keys `has_diagnosis_code` / `has_event_code` exactly as planned. An
 unsupported criteria key raises loudly rather than silently building the
 wrong cohort (same "never silently invent data" rule as priorauth's honest
 "not required" default).
@@ -24,7 +23,7 @@ import logging
 from datetime import date, timedelta
 
 from django.db import models as django_models
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Exists, Max, OuterRef, Q
 from django.utils import timezone
 
 from core.events import emit
@@ -74,6 +73,10 @@ _SUPPORTED_CRITERIA_KEYS = frozenset({
     "missed_appointments_gte",
     "preferred_language_in",
     "exclude_patient_ids",
+    # ClinicalEvent-backed keys (Agent 8) — the extension this module's
+    # docstring reserved for when caregaps landed real clinical data.
+    "has_diagnosis_code",
+    "has_event_code",
 })
 
 
@@ -135,6 +138,21 @@ def build_cohort(criteria: dict) -> django_models.QuerySet:
 
     if "preferred_language_in" in criteria:
         qs = qs.filter(preferred_language__in=criteria["preferred_language_in"])
+
+    # ClinicalEvent-backed keys: Exists subqueries, not joins, so a patient
+    # with many matching events still appears exactly once (no .distinct()
+    # needed, which would break enroll_cohort's bulk insert counting).
+    if "has_diagnosis_code" in criteria:
+        from caregaps.models import ClinicalEvent  # local: caregaps loads after outreach
+        qs = qs.filter(Exists(ClinicalEvent.objects.filter(
+            patient=OuterRef("pk"), event_type="diagnosis",
+            code=criteria["has_diagnosis_code"],
+        )))
+    if "has_event_code" in criteria:
+        from caregaps.models import ClinicalEvent
+        qs = qs.filter(Exists(ClinicalEvent.objects.filter(
+            patient=OuterRef("pk"), code=criteria["has_event_code"],
+        )))
 
     if "exclude_patient_ids" in criteria:
         qs = qs.exclude(id__in=criteria["exclude_patient_ids"])

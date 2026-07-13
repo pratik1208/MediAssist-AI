@@ -133,6 +133,7 @@ class CampaignListCreateAPIView(APIView):
 
 # -- staff: preview a cohort before launching (FR-O1/O2) ----------------------
 
+# Allow admins to see which patients match the cohort criteria before creating or launching a campaign.
 class PreviewCohortAPIView(APIView):
     """POST /api/staff/outreach/preview-cohort/ — {cohort_criteria} ->
     {count, sample}. Stateless on purpose: the criteria-builder UI can
@@ -164,7 +165,7 @@ class PreviewCohortAPIView(APIView):
 
 
 # -- staff: campaign detail / launch / pause / stats / members -----------------
-
+# Return the complete details of one campaign along with its live analytics/statistics.
 class CampaignDetailAPIView(APIView):
     """GET /api/staff/outreach/{id}/ — summary + live funnel stats."""
 
@@ -179,7 +180,7 @@ class CampaignDetailAPIView(APIView):
         body["stats"] = services.campaign_stats(campaign)
         return Response(body)
 
-
+# To start an outreach campaign and begin contacting patients automatically.
 class LaunchCampaignAPIView(APIView):
     """POST /api/staff/outreach/{id}/launch/ — draft -> running: enroll the
     cohort and dispatch the first wave immediately (wave 0 is normally
@@ -212,7 +213,7 @@ class LaunchCampaignAPIView(APIView):
         return Response({"status": "running", "enrolled": enrollment["enrolled"],
                          "first_wave": wave})
 
-
+# Temporarily stop a running outreach campaign from sending any more messages.
 class PauseCampaignAPIView(APIView):
     """POST /api/staff/outreach/{id}/pause/ — running -> paused. A paused
     campaign is skipped by wave dispatch (and by the Phase 6 scheduled job);
@@ -232,7 +233,7 @@ class PauseCampaignAPIView(APIView):
         campaign.save(update_fields=["status"])
         return Response({"status": "paused"})
 
-
+# Temporarily stop a running outreach campaign from sending any more messages.
 class CampaignStatsAPIView(APIView):
     """GET /api/staff/outreach/{id}/stats/ — the FR-O7 funnel by itself
     (the analytics dashboard polls this without re-fetching the campaign)."""
@@ -246,7 +247,7 @@ class CampaignStatsAPIView(APIView):
             return Response({"error": "campaign not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response(services.campaign_stats(campaign))
 
-
+# Manually send the next round (wave) of outreach messages to patients who haven't responded yet.
 class DispatchWaveAPIView(APIView):
     """POST /api/staff/outreach/{id}/dispatch-wave/ — manually run the
     escalation pass for one campaign. Connective tissue: Phase 6 turns wave

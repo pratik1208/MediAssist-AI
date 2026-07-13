@@ -21,6 +21,7 @@ SEEDS = [
     "seed_payer_rules",   # priorauth.PayerRule
     "seed_protocols",     # triage.ClinicalProtocol
     "seed_campaigns",     # outreach.Campaign demo drafts
+    "seed_guidelines",    # caregaps.ClinicalGuideline
 ]
 
 

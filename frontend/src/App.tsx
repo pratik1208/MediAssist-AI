@@ -3,7 +3,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import CampaignAnalyticsPage from './pages/CampaignAnalyticsPage'
 import CampaignManagerPage from './pages/CampaignManagerPage'
+import CareGapDashboardPage from './pages/CareGapDashboardPage'
 import EscalationQueuePage from './pages/EscalationQueuePage'
+import PatientGapPanelPage from './pages/PatientGapPanelPage'
 import PatientAuthorizationsPage from './pages/PatientAuthorizationsPage'
 import PatientReferralsPage from './pages/PatientReferralsPage'
 import PriorAuthDetailPage from './pages/PriorAuthDetailPage'
@@ -40,6 +42,8 @@ function App() {
           <Route path="/staff/priorauth/:id" element={<PriorAuthDetailPage />} />
           <Route path="/staff/outreach" element={<CampaignManagerPage />} />
           <Route path="/staff/outreach/:id" element={<CampaignAnalyticsPage />} />
+          <Route path="/staff/caregaps" element={<CareGapDashboardPage />} />
+          <Route path="/staff/caregaps/patients/:id" element={<PatientGapPanelPage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
