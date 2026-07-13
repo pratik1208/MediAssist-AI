@@ -3,10 +3,10 @@
 Patient-facing: /api/frontdesk/start issues the same signed session token
 every other patient flow uses (core.sessions — one door), and
 /api/frontdesk/chat is THE single omnichannel entry point (SSE streaming,
-same shape as Agent 1's chat). Phase 3 is deterministic: the client names
-the intent (or an auth action) explicitly; Phase 4 puts the AI router in
-front so free text arrives instead, without changing this endpoint's URL
-or response envelope.
+same shape as Agent 1's chat). Free text goes through the Phase 4 AI
+router (red-flag screened first, multi-intent); an explicit intent or auth
+action skips the model and dispatches deterministically — same envelope
+either way.
 
 Staff-facing: the "human needed" queue — list, claim, resolve (FR-A7),
 mirroring triage's escalation endpoints.
@@ -73,14 +73,25 @@ class StartFrontdeskAPIView(APIView):
 class FrontdeskChatAPIView(SessionTokenAPIView):
     """POST /api/frontdesk/chat — the single omnichannel entry point.
 
-    Three request shapes, one SSE response envelope:
+    Four request shapes, one SSE response envelope:
       {"action": "start_auth", "contact_number": ..., "dob": ...}
       {"action": "verify_otp", "dob": ..., "otp": ...}
-      {"intent": ..., "payload": {...}, "message": "..."}   (Phase 3: explicit
-        intent; Phase 4's router turns free text into these dispatches)
+      {"intent": ..., "payload": {...}}          (explicit, deterministic)
+      {"message": "refill my BP meds and ..."}   (free text -> the Phase 4
+        AI router, red-flag screened first, multi-intent)
 
     The final SSE event always carries {"done": true, "status": ..., "reply": ...}.
     """
+
+    HISTORY_TURNS = 10
+
+    def _history(self):
+        """Recent patient/assistant turns, oldest first, for router context."""
+        rows = (Message.objects
+                .filter(conversation=self.conversation, role__in=["Patient", "Assistant"])
+                .order_by("-id")[:self.HISTORY_TURNS])
+        return [{"role": "user" if m.role == "Patient" else "assistant",
+                 "content": m.content} for m in reversed(rows)]
 
     def post(self, request):
         # Any signed session can walk in the front door — one issued by
@@ -124,9 +135,15 @@ class FrontdeskChatAPIView(SessionTokenAPIView):
             outcome = services.dispatch_intent(session, intent, payload)
             patient_line = text or f"[{intent} request]"
 
+        elif text:
+            from frontdesk.ai import handle_frontdesk_message
+            outcome = handle_frontdesk_message(session, text, history=self._history())
+            patient_line = text
+
         else:
             return Response(
-                {"error": "provide an intent or an action (start_auth / verify_otp)"},
+                {"error": "provide a message, an intent, or an action "
+                          "(start_auth / verify_otp)"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -85,10 +85,29 @@ class TestChat:
         assert client.post(CHAT_URL, {"intent": "faq"},
                            content_type="application/json").status_code == 403
 
-    def test_needs_an_intent_or_action(self, client, db):
+    def test_empty_turn_is_rejected(self, client, db):
         token = start(client)["session_token"]
-        code, body = chat(client, token, {"message": "hello?"})
+        code, body = chat(client, token, {})
         assert code == 400
+
+    def test_free_text_goes_through_the_router(self, client, db, monkeypatch):
+        """Phase 4: a bare message routes; here the router is mocked to a
+        single FAQ intent so the whole HTTP -> router -> registry path runs."""
+        call_command("seed_knowledge")
+
+        def fake_call_tool(system, messages, tool, max_tokens=2048):
+            if tool["name"] == "route_message":
+                return {"intents": [{"intent": "faq", "summary": "opening hours"}],
+                        "emergency_symptoms_detected": False,
+                        "mandatory_escalation_category": None}
+            return {"answered": True, "answer": "We're open 9:00 AM to 6:00 PM."}
+        monkeypatch.setattr("frontdesk.ai.call_tool", fake_call_tool)
+
+        token = start(client)["session_token"]
+        code, event = chat(client, token, {"message": "when are you open?"})
+        assert code == 200
+        assert event["status"] == "completed"
+        assert "9:00 AM" in event["reply"]
 
     def test_faq_answers_pre_auth(self, client, db):
         call_command("seed_knowledge")

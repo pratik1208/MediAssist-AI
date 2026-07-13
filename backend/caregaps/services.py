@@ -237,7 +237,7 @@ def bundle_breakdown(gaps) -> dict:
         target.append(gap)
     return {"shared_visit": shared, "separate": separate}
 
-
+# Create one care plan for a patient by combining all their open care gaps into an actionable plan.
 def bundle_care_plan(patient: Patient) -> CarePlan | None:
     """Group the patient's OPEN gaps into one CarePlan (FR-G4). Reuses the
     patient's active plan if one exists (adding newly detected gaps to it)

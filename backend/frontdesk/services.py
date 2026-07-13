@@ -267,8 +267,26 @@ def _handle_faq(session, payload):
                                  summary=f"No knowledge-base answer for: {query!r}")
         return {"reply": "I don't have that answer on hand — I've asked the team "
                          "to get back to you.", "staff_task_id": task.id}
+
+    # Phase 4: the model phrases the answer FROM the retrieved articles only
+    # (FR-A5). It may also conclude the articles don't actually answer the
+    # question — that's an honest hand-off, not a failure. If the model is
+    # unreachable, fall back to the top article verbatim: never block on AI.
+    try:
+        from frontdesk.ai import answer_faq  # local: services must import cleanly without the AI stack
+        result = answer_faq(query, articles)
+        if not result.get("answered"):
+            task = create_staff_task(session, "unanswered_question",
+                                     summary=f"Articles retrieved but none answer: {query!r}")
+            return {"reply": "I don't have that answer on hand — I've asked the "
+                             "team to get back to you.", "staff_task_id": task.id}
+        reply = result["answer"]
+    except Exception:
+        log.exception("[FRONTDESK FAQ] model unavailable; replying with the top article")
+        reply = articles[0].body
+
     return {
-        "reply": articles[0].body,
+        "reply": reply,
         "articles": [{"id": a.id, "title": a.title} for a in articles],
     }
 
