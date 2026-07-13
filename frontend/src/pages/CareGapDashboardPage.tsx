@@ -7,7 +7,12 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
-import { getGapWorklist, getQualityMetrics, triggerScan } from '../lib/caregapsApi'
+import {
+  getGapWorklist,
+  getQualityMetrics,
+  pushPlansToOutreach,
+  triggerScan,
+} from '../lib/caregapsApi'
 import type { GapStatus, RiskTier } from '../lib/caregapsApi'
 
 const RISK_STYLE: Record<RiskTier, string> = {
@@ -43,6 +48,11 @@ export default function CareGapDashboardPage() {
     refetchInterval: 15_000,
   })
 
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['caregapMetrics'] })
+    void queryClient.invalidateQueries({ queryKey: ['caregapWorklist'] })
+  }
+
   const scan = useMutation({
     mutationFn: () => triggerScan(),
     onSuccess: (result) => {
@@ -50,10 +60,23 @@ export default function CareGapDashboardPage() {
         `Scanned ${result.patients_scanned ?? 0} patient(s): ${result.opened} opened, ` +
           `${result.refreshed} refreshed, ${result.closed} closed on evidence.`,
       )
-      void queryClient.invalidateQueries({ queryKey: ['caregapMetrics'] })
-      void queryClient.invalidateQueries({ queryKey: ['caregapWorklist'] })
+      invalidate()
     },
     onError: () => setScanResult("Couldn't run the scan."),
+  })
+
+  const push = useMutation({
+    mutationFn: pushPlansToOutreach,
+    onSuccess: (result) => {
+      setScanResult(
+        result.paused
+          ? 'Care-gap campaign is paused — plans left in draft.'
+          : `Bundled ${result.bundled} plan(s), sent ${result.sent} into outreach ` +
+            `(${result.wave.queued} message(s) queued).`,
+      )
+      invalidate()
+    },
+    onError: () => setScanResult("Couldn't push plans to outreach."),
   })
 
   const forbidden = metrics.isError && (metrics.error as { status?: number })?.status === 403
@@ -90,14 +113,24 @@ export default function CareGapDashboardPage() {
             Preventive care the panel is due for, prioritized by risk.
           </p>
         </div>
-        <button
-          onClick={() => scan.mutate()}
-          disabled={scan.isPending}
-          className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white
-                     transition hover:bg-teal-700 disabled:opacity-40"
-        >
-          {scan.isPending ? 'Scanning…' : 'Run scan now'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => scan.mutate()}
+            disabled={scan.isPending}
+            className="rounded-lg border border-teal-600 px-4 py-2 text-sm font-semibold
+                       text-teal-700 transition hover:bg-teal-50 disabled:opacity-40"
+          >
+            {scan.isPending ? 'Scanning…' : 'Run scan now'}
+          </button>
+          <button
+            onClick={() => push.mutate()}
+            disabled={push.isPending}
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white
+                       transition hover:bg-teal-700 disabled:opacity-40"
+          >
+            {push.isPending ? 'Sending…' : 'Send plans to outreach'}
+          </button>
+        </div>
       </header>
       {scanResult && <p className="mt-2 text-sm text-teal-700">{scanResult}</p>}
 

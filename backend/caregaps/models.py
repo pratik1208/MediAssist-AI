@@ -79,6 +79,7 @@ class ClinicalEvent(models.Model):
 
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="clinical_events")
     event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    # The standardized medical code
     code = models.CharField(max_length=40, db_index=True, help_text="LOINC/CPT/CVX-style.")
     value = models.JSONField(default=dict, blank=True, help_text='e.g. {"hba1c": 8.4}')
     occurred_at = models.DateTimeField()
@@ -93,7 +94,7 @@ class ClinicalEvent(models.Model):
     def __str__(self):
         return f"{self.event_type} {self.code} for patient #{self.patient_id} @ {self.occurred_at:%Y-%m-%d}"
 
-
+# epresents an overdue or missing care item for a patient and tracks its entire lifecycle from detection to successful completion and closure
 class CareGap(models.Model):
     """A detected violation of one guideline for one patient (FR-G1/G2)."""
 

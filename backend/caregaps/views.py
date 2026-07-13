@@ -199,6 +199,21 @@ class TriggerScanAPIView(APIView):
         return Response({"scope": "all", **services.scan_all()})
 
 
+# -- staff: push care plans into outreach (FR-G5) --------------------------------
+
+class PushOutreachAPIView(APIView):
+    """POST /api/staff/caregaps/push-outreach/ — bundle every patient with
+    open gaps and send the resulting plans through the dedicated Agent 7
+    campaign (the push_care_plans command as a staff button)."""
+
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        bundled = services.bundle_all()
+        result = services.push_plans_to_outreach()
+        return Response({"bundled": bundled, **result})
+
+
 # -- staff: FR-G9 quality metrics -------------------------------------------------
 
 class QualityMetricsAPIView(APIView):

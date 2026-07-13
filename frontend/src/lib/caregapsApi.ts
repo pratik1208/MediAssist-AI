@@ -144,3 +144,13 @@ export const triggerScan = (patientId?: number) =>
 
 export const getQualityMetrics = () =>
   request<QualityMetrics>('/api/staff/caregaps/metrics/', { credentials: 'include' })
+
+export const pushPlansToOutreach = () =>
+  request<{
+    bundled: number
+    campaign_id: number | null
+    sent: number
+    skipped_opted_out: number
+    paused?: boolean
+    wave: { queued: number; unreachable: number }
+  }>('/api/staff/caregaps/push-outreach/', staffPost())

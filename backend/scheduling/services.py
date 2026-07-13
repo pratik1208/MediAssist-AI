@@ -119,6 +119,24 @@ def book_appointment(
     _emit_booked(appointment)
     return appointment
 
+
+def complete_appointment(appointment):
+    """Mark a visit as actually having happened, and announce it. Agent 8
+    (care gaps) listens for appointment.completed to run completion
+    detection (FR-G8) — which is why completion should go through this one
+    door rather than a bare status write."""
+    appointment.status = "completed"
+    appointment.save(update_fields=["status"])
+    emit(
+        "appointment.completed",
+        appointment_id=appointment.id,
+        patient_id=appointment.patient_id,
+        doctor_name=appointment.doctor.name,
+        source=appointment.source,
+    )
+    return appointment
+
+
 # Either everything succeeds or everything is rolled back.
 @transaction.atomic
 def promote_next_waitlisted(

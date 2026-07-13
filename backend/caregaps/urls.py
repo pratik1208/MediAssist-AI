@@ -9,6 +9,7 @@ from caregaps.views import (
     ClinicalGuidelineCRUDAPIView,
     GapWorklistAPIView,
     PatientGapsAPIView,
+    PushOutreachAPIView,
     QualityMetricsAPIView,
     TriggerScanAPIView,
 )
@@ -17,6 +18,7 @@ urlpatterns = [
     # staff care-gap surfaces
     path("staff/caregaps/", GapWorklistAPIView.as_view()),
     path("staff/caregaps/scan/", TriggerScanAPIView.as_view()),
+    path("staff/caregaps/push-outreach/", PushOutreachAPIView.as_view()),
     path("staff/caregaps/metrics/", QualityMetricsAPIView.as_view()),
     path("staff/caregaps/patients/<int:patient_id>/", PatientGapsAPIView.as_view()),
     path("staff/caregaps/patients/<int:patient_id>/bundle/", BundleCarePlanAPIView.as_view()),

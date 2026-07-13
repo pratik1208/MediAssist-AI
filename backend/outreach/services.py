@@ -77,6 +77,9 @@ _SUPPORTED_CRITERIA_KEYS = frozenset({
     # docstring reserved for when caregaps landed real clinical data.
     "has_diagnosis_code",
     "has_event_code",
+    # Agent 8 Phase 6 (FR-G5): patients with a live care plan — the cohort
+    # care-gap outreach campaigns target.
+    "has_open_care_plan",
 })
 
 
@@ -153,6 +156,12 @@ def build_cohort(criteria: dict) -> django_models.QuerySet:
         qs = qs.filter(Exists(ClinicalEvent.objects.filter(
             patient=OuterRef("pk"), code=criteria["has_event_code"],
         )))
+    if criteria.get("has_open_care_plan"):
+        from caregaps.models import CarePlan
+        qs = qs.filter(Exists(CarePlan.objects.filter(
+            patient=OuterRef("pk"),
+            status__in=("draft", "sent", "accepted", "in_progress"),
+        )))
 
     if "exclude_patient_ids" in criteria:
         qs = qs.exclude(id__in=criteria["exclude_patient_ids"])
@@ -182,6 +191,29 @@ def enroll_cohort(campaign: Campaign, assigned_physician: Doctor | None = None) 
     ]
     CampaignMember.objects.bulk_create(to_create)
     return {"enrolled": len(to_create), "already_enrolled": len(already_enrolled_ids)}
+
+
+def re_enroll_member(member: CampaignMember) -> bool:
+    """Put an existing member back at the top of the escalation ladder for a
+    NEW outreach cycle (Agent 8's recycle loop, FR-G7: a recycled care plan
+    re-enters outreach, but unique(campaign, patient) rightly prevents a
+    second membership). Resets state to identified and clears the attempt
+    ladder — OutboundMessage/InboundResponse history rows are kept.
+
+    Refuses (returns False) for opted-out members: no recycle loop may ever
+    override an opt-out (NFR-8)."""
+    if member.state == "opted_out" or _is_fully_opted_out(member.patient):
+        return False
+    member.state = "identified"
+    member.channel_attempts = []
+    member.snooze_until = None
+    member.save(update_fields=["state", "channel_attempts", "snooze_until"])
+    return True
+
+
+def _is_fully_opted_out(patient: Patient) -> bool:
+    prefs = patient.communication_preferences or {}
+    return all(prefs.get(ch) is False for ch in _ALL_CHANNELS)
 
 
 # -- FR-O4/Edge Case 15: wave dispatch -----------------------------------------
@@ -232,7 +264,14 @@ def dispatch_wave(campaign: Campaign) -> dict:
         # falls back to using an unrecognized string as-is when there's no
         # matching key in _TEMPLATES, and .format() is a no-op on a string
         # with no {placeholders} left in it.
-        rendered = render_message(member, campaign.clinical_goal)
+        #
+        # The goal is per-MEMBER: for ordinary campaigns enroll_cohort()
+        # copies clinical_goal into outreach_reason, so this is the same
+        # string (and the same render cache entry). Care-gap campaigns
+        # (Agent 8, FR-G5) set each member's outreach_reason to that
+        # patient's plan summary, so their message reflects their own plan
+        # while still riding this one sender.
+        rendered = render_message(member, member.outreach_reason or campaign.clinical_goal)
         note = notify(member.patient, rendered, {}, channel=step["channel"])
         if note is not None:
             OutboundMessage.objects.create(member=member, notification=note, wave_number=wave_index)
@@ -347,6 +386,11 @@ def handle_response_action(member: CampaignMember, intent: str, *,
                 "campaign_id": member.campaign_id, "member_id": member.id,
                 "appointment_id": appointment.id,
             })
+            emit(
+                "outreach.member_booked", campaign_id=member.campaign_id,
+                member_id=member.id, patient_id=member.patient_id,
+                appointment_id=appointment.id,
+            )
         else:
             member.state = "responded"
             member.save(update_fields=["state"])

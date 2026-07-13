@@ -342,6 +342,115 @@ def backfill_events_from_document(patient: Patient, document_text: str) -> dict:
     return {"created": created, "skipped": skipped, "failed": False}
 
 
+# -- Phase 6: scheduling surface hook + outreach delivery -----------------------
+
+def open_gaps_for(patient: Patient) -> list[dict]:
+    """The scheduling-surface hook (PRD secondary journey): a compact,
+    priority-ordered list of what this patient is due for, cheap enough to
+    attach to any booking response so the conversation can offer "you're
+    also due for a cholesterol screening while you're here"."""
+    today = timezone.localdate()
+    return [{
+        "gap_id": gap.id,
+        "guideline": gap.guideline.name,
+        "care_item_type": gap.guideline.care_item_type,
+        "risk_tier": gap.guideline.risk_tier,
+        "days_overdue": (today - gap.due_since).days,
+    } for gap in prioritize(statuses=("open", "outreach")).filter(patient=patient)]
+
+
+def bundle_all() -> int:
+    """Bundle every patient who has open gaps into a care plan (creating or
+    refreshing their active plan). The step between the nightly scan and
+    pushing plans into outreach."""
+    patient_ids = (
+        CareGap.objects.filter(status="open").values_list("patient_id", flat=True).distinct()
+    )
+    bundled = 0
+    for patient in Patient.objects.filter(id__in=patient_ids).iterator():
+        if bundle_care_plan(patient) is not None:
+            bundled += 1
+    return bundled
+
+
+CAREGAP_CAMPAIGN_NAME = "Care plan follow-up"
+
+
+def push_plans_to_outreach() -> dict:
+    """FR-G5: care-gap outreach runs AS an Agent 7 campaign — one dedicated,
+    always-running campaign whose cohort is "patients with a live care
+    plan". No second sender: enrollment, channel escalation, AI reply
+    classification, auto-booking (FR-G6, via Agent 1's booking door) and
+    opt-out compliance are all outreach's existing machinery.
+
+    Each member's outreach_reason is set to THEIR plan's summary, which
+    dispatch_wave uses as the per-member message goal — so every patient
+    hears about their own items. Draft plans go to "sent" and their gaps to
+    "outreach"; a patient recycled by FR-G7 is re-enrolled at the top of the
+    escalation ladder via outreach.re_enroll_member (which refuses for
+    opted-out patients — a recycle loop never overrides an opt-out)."""
+    from outreach import services as outreach
+    from outreach.models import Campaign, CampaignMember
+
+    draft_plans = list(
+        CarePlan.objects.filter(status="draft").select_related("patient").order_by("id")
+    )
+    if not draft_plans:
+        return {"campaign_id": None, "sent": 0, "skipped_opted_out": 0,
+                "wave": {"queued": 0, "unreachable": 0}}
+
+    campaign, created = Campaign.objects.get_or_create(
+        name=CAREGAP_CAMPAIGN_NAME,
+        defaults={
+            "clinical_goal": "complete the preventive care items on your care plan",
+            "cohort_criteria": {"has_open_care_plan": True},
+            "channel_plan": [
+                {"channel": "sms", "wait_days": 0},
+                {"channel": "email", "wait_days": 3},
+                {"channel": "voice", "wait_days": 7},
+            ],
+            "status": "running",
+            "launched_at": timezone.now(),
+        },
+    )
+    if campaign.status == "paused":
+        # Staff paused care-gap outreach deliberately; honor it.
+        return {"campaign_id": campaign.id, "sent": 0, "skipped_opted_out": 0,
+                "paused": True, "wave": {"queued": 0, "unreachable": 0}}
+    if campaign.status != "running":
+        campaign.status = "running"
+        campaign.launched_at = campaign.launched_at or timezone.now()
+        campaign.save(update_fields=["status", "launched_at"])
+
+    sent = skipped_opted_out = 0
+    for plan in draft_plans:
+        patient = plan.patient
+        reason = (plan.plan_text or campaign.clinical_goal)[:200]
+        member = CampaignMember.objects.filter(campaign=campaign, patient=patient).first()
+        if member is None:
+            if outreach._is_fully_opted_out(patient):
+                skipped_opted_out += 1
+                continue
+            member = CampaignMember.objects.create(
+                campaign=campaign, patient=patient, outreach_reason=reason,
+            )
+        else:
+            member.outreach_reason = reason
+            member.save(update_fields=["outreach_reason"])
+            if not outreach.re_enroll_member(member):
+                skipped_opted_out += 1
+                continue
+        plan.status = "sent"
+        plan.save(update_fields=["status"])
+        plan.gaps.filter(status="open").update(status="outreach")
+        sent += 1
+
+    wave = outreach.dispatch_wave(campaign)
+    log.info("[CAREGAPS OUTREACH] pushed %s plan(s), wave: %s", sent, wave)
+    return {"campaign_id": campaign.id, "sent": sent,
+            "skipped_opted_out": skipped_opted_out, "wave": wave}
+
+
 # -- FR-G8: close on evidence ---------------------------------------------------
 
 def close_gap(gap: CareGap, evidence_event: ClinicalEvent | None = None) -> CareGap:
