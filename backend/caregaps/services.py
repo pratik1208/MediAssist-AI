@@ -45,14 +45,14 @@ def _audit(patient, action: str, payload: dict) -> None:
         action=action, payload=payload,
     )
 
-
+# Convert a datetime into the patient's/local calendar date.
 def _local_date(dt):
     """The event's LOCAL calendar date. occurred_at.date() would be the UTC
     date, which near midnight local time is a day off — and 'overdue by one
     day' decisions live exactly on that boundary."""
     return timezone.localtime(dt).date()
 
-
+# Get the patient's most recent clinical event for a particular medical code.
 def _latest_event(patient: Patient, code: str) -> ClinicalEvent | None:
     if not code:
         return None
@@ -89,6 +89,7 @@ def _evaluate(patient: Patient, guideline: ClinicalGuideline, today):
         discharge does not satisfy a new one. Without a recorded trigger it
         degrades to the periodic check rather than guessing.
     """
+    # Find the most recent evidence that this patient completed the required care item.
     last_item = _latest_event(patient, guideline.care_item_code)
 
     if guideline.care_item_type == "followup":
@@ -129,7 +130,8 @@ def scan_patient(patient: Patient) -> dict:
     for guideline in ClinicalGuideline.objects.filter(is_active=True):
         if not build_cohort(guideline.population_criteria).filter(pk=patient.pk).exists():
             continue
-
+        # What is the patient's status?- verdict
+        # John became overdue on June 30. - Info
         verdict, info = _evaluate(patient, guideline, today)
         live = (
             CareGap.objects
@@ -161,7 +163,7 @@ def scan_patient(patient: Patient) -> dict:
 
     return {"opened": opened, "refreshed": refreshed, "closed": closed}
 
-
+# Scan the entire clinic and update care gaps for all relevant patients.
 def scan_all() -> dict:
     """Bulk scan (nightly job from Phase 7; management command until then).
 
@@ -172,10 +174,12 @@ def scan_all() -> dict:
     candidate_ids: set[int] = set()
 
     for guideline in ClinicalGuideline.objects.filter(is_active=True):
+        # Find patients who recently completed the care item.
         recent_item = ClinicalEvent.objects.filter(
             patient=OuterRef("pk"), code=guideline.care_item_code,
             occurred_at__date__gte=today - timedelta(days=guideline.frequency_days),
         )
+        # Find patients who already have an active gap.
         live_gap = (
             CareGap.objects
             .filter(patient=OuterRef("pk"), guideline=guideline)

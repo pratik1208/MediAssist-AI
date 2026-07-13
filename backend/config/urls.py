@@ -35,6 +35,7 @@ urlpatterns = [
     path("api/", include("priorauth.urls")),
     path("api/", include("outreach.urls")),
     path("api/", include("caregaps.urls")),
+    path("api/", include("frontdesk.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("scalar/", include("django_scalar.urls")),
 ]

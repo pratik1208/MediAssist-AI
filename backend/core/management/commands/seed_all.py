@@ -22,6 +22,7 @@ SEEDS = [
     "seed_protocols",     # triage.ClinicalProtocol
     "seed_campaigns",     # outreach.Campaign demo drafts
     "seed_guidelines",    # caregaps.ClinicalGuideline
+    "seed_knowledge",     # frontdesk.KnowledgeArticle (FAQ corpus)
 ]
 
 
