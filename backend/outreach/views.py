@@ -13,6 +13,7 @@ anything back out.
 """
 
 import datetime
+import logging
 
 from django.utils import timezone
 from rest_framework import status
@@ -22,6 +23,8 @@ from rest_framework.views import APIView
 
 from core.base_crud_views import BaseCRUDAPIView
 from outreach import services
+
+log = logging.getLogger("outreach")
 from outreach.models import Campaign, CampaignMember, InboundResponse, OutboundMessage
 from outreach.serializers import (
     CampaignMemberSerializer,
@@ -309,11 +312,17 @@ class InboundWebhookAPIView(APIView):
     testing. A phone number resolves to that patient's most recently
     contacted active membership.
 
-    Always records an InboundResponse. By default the text is run through
-    the Phase 4 AI classifier (services.classify_and_handle_response) --
-    an explicit "intent" (+ optional "snooze_until") in the body bypasses
-    the classifier entirely, which dev/testing use for deterministic
-    control over exactly which branch runs.
+    A reply that DOES match a running campaign always records an
+    InboundResponse. By default the text is run through the Phase 4 AI
+    classifier (services.classify_and_handle_response) -- an explicit
+    "intent" (+ optional "snooze_until") in the body bypasses the classifier
+    entirely, which dev/testing use for deterministic control over exactly
+    which branch runs.
+
+    A reply that does NOT match any running campaign is not dropped: it's
+    handed to the Agent 9 front desk instead (Phase 6 "one front door for
+    everything" -- a patient texting outside a campaign still deserves an
+    answer). Optional "channel" in the body picks sms/whatsapp (default sms).
     """
 
     permission_classes = [AllowAny]
@@ -327,6 +336,17 @@ class InboundWebhookAPIView(APIView):
 
         member = self._resolve_member(request.data)
         if member is None:
+            sender = (request.data.get("from") or "").strip()
+            if sender:
+                from frontdesk.services import handle_channel_message
+                channel = request.data.get("channel") or "sms"
+                try:
+                    outcome = handle_channel_message(channel, sender, text)
+                    return Response(outcome, status=status.HTTP_200_OK)
+                except ValueError as exc:
+                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                except Exception:
+                    log.exception("frontdesk hand-off failed for inbound sender %s", sender)
             return Response({"error": "no active campaign membership found for this sender"},
                             status=status.HTTP_404_NOT_FOUND)
 

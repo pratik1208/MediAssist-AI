@@ -8,6 +8,7 @@ import { confirmReferral, getMyReferrals } from '../lib/referralsApi'
 import {
   clearTriageSession,
   registrationSessionToken,
+  sessionUnusable,
   triageSessionToken,
 } from '../lib/session'
 
@@ -54,8 +55,7 @@ export default function PatientReferralsPage() {
     retry: false,
   })
 
-  const authFailed =
-    referrals.isError && [401, 403].includes((referrals.error as { status?: number })?.status ?? 0)
+  const authFailed = referrals.isError && sessionUnusable(referrals.error)
   if (authFailed && token !== null) {
     clearTriageSession()
     setToken(null)

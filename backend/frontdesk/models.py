@@ -35,6 +35,13 @@ class PatientSession(models.Model):
         Conversation, on_delete=models.CASCADE, related_name="frontdesk_session",
     )
     channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="web")
+    channel_identifier = models.CharField(
+        max_length=32, blank=True, db_index=True,
+        help_text="Raw sender address (phone number) for channel-originated "
+                   "sessions with no signed token to correlate by -- SMS/WhatsApp "
+                   "replies land here via the Phase 6 channel adapter. Blank for "
+                   "web/app sessions opened through /frontdesk/start.",
+    )
     authenticated = models.BooleanField(default=False)
     pending_intents = models.JSONField(
         default=list, blank=True,

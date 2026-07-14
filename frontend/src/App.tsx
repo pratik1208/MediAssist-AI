@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import CampaignAnalyticsPage from './pages/CampaignAnalyticsPage'
 import CampaignManagerPage from './pages/CampaignManagerPage'
 import CareGapDashboardPage from './pages/CareGapDashboardPage'
 import EscalationQueuePage from './pages/EscalationQueuePage'
+import FrontdeskChatPage from './pages/FrontdeskChatPage'
 import PatientGapPanelPage from './pages/PatientGapPanelPage'
 import PatientAuthorizationsPage from './pages/PatientAuthorizationsPage'
 import PatientReferralsPage from './pages/PatientReferralsPage'
@@ -17,6 +18,7 @@ import RefillQueuePage from './pages/RefillQueuePage'
 import RefillsPage from './pages/RefillsPage'
 import RegistrationChatPage from './pages/RegistrationChatPage'
 import SchedulingChatPage from './pages/SchedulingChatPage'
+import StaffTaskQueuePage from './pages/StaffTaskQueuePage'
 import TriageChatPage from './pages/TriageChatPage'
 
 const queryClient = new QueryClient()
@@ -26,7 +28,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/schedule" replace />} />
+          <Route path="/" element={<FrontdeskChatPage />} />
           <Route path="/schedule" element={<SchedulingChatPage />} />
           <Route path="/register" element={<RegistrationChatPage />} />
           <Route path="/triage" element={<TriageChatPage />} />
@@ -44,6 +46,7 @@ function App() {
           <Route path="/staff/outreach/:id" element={<CampaignAnalyticsPage />} />
           <Route path="/staff/caregaps" element={<CareGapDashboardPage />} />
           <Route path="/staff/caregaps/patients/:id" element={<PatientGapPanelPage />} />
+          <Route path="/staff/frontdesk/tasks" element={<StaffTaskQueuePage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

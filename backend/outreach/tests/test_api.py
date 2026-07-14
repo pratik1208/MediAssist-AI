@@ -215,9 +215,18 @@ class TestInboundWebhook:
                                  {"member_id": contacted_member.id, "text": "yes ok"})
         assert response.status_code == 201
 
-    def test_unknown_sender_is_404(self, client, db):
+    def test_unknown_sender_falls_through_to_frontdesk(self, client, db):
+        """Phase 6: a sender with no campaign match at all is no longer a
+        dead end — it's handed to the Agent 9 front door instead of 404ing."""
+        from frontdesk.models import PatientSession
         response = post_json(client, WEBHOOK_URL, {"from": "0000000000", "text": "hi"})
-        assert response.status_code == 404
+        assert response.status_code == 200
+        body = response.json()
+        session = PatientSession.objects.get(id=body["session_id"])
+        assert session.channel == "sms"
+        assert session.channel_identifier == "0000000000"
+        # no campaign involvement — this never touched InboundResponse
+        assert InboundResponse.objects.count() == 0
 
     def test_empty_text_is_400(self, client, contacted_member):
         response = post_json(client, WEBHOOK_URL, {"from": "9111111111", "text": "  "})
@@ -249,11 +258,14 @@ class TestInboundWebhook:
         })
         assert response.status_code == 400
 
-    def test_paused_campaign_members_are_not_matched_by_phone(self, client, contacted_member):
+    def test_paused_campaign_members_fall_through_to_frontdesk(self, client, contacted_member):
+        """A paused campaign isn't expecting replies, but a patient texting
+        anyway still gets a front door rather than a 404 into the void."""
         contacted_member.campaign.status = "paused"
         contacted_member.campaign.save(update_fields=["status"])
         response = post_json(client, WEBHOOK_URL, {"from": "9111111111", "text": "hi"})
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert InboundResponse.objects.count() == 0  # not treated as a campaign reply
 
 
 class TestFullLifecycleOverHTTP:

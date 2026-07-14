@@ -21,7 +21,7 @@ import json
 
 from django.core import signing
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Avg, Case, Count, F, IntegerField, Value, When
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
@@ -33,7 +33,7 @@ from core.base_crud_views import BaseCRUDAPIView
 from core.models import Conversation, Message
 from core.sessions import SESSION_SALT, SessionTokenAPIView
 from frontdesk import services
-from frontdesk.models import KnowledgeArticle, PatientSession, StaffTask
+from frontdesk.models import IntentRoute, KnowledgeArticle, PatientSession, StaffTask
 from frontdesk.serializers import KnowledgeArticleSerializer, StaffTaskSerializer
 
 
@@ -242,6 +242,55 @@ class StaffTaskResolveAPIView(APIView):
             task.claimed_by = request.data.get("claimed_by") or request.user.get_username()
         task.save(update_fields=["status", "resolved_at", "claimed_by"])
         return Response(_task_row(task))
+
+
+class FrontdeskAnalyticsAPIView(APIView):
+    """GET /api/staff/frontdesk/analytics/ — FR-A9 aggregates (staff only).
+
+    "Resolved with zero staff tasks" is exactly IntentRoute.status ==
+    "completed" (dispatch_intent sets "escalated" precisely when a handler
+    created a StaffTask), so automation/escalation rate falls straight out
+    of the audit trail Phase 3 already writes. Nothing on Message carries a
+    timestamp, and an automated dispatch finishes inside the same request
+    it started in — so the only response-time gap this schema can honestly
+    measure is how long an escalated task waited on a human
+    (StaffTask.created_at -> resolved_at), not end-to-end patient latency.
+    """
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        routes = IntentRoute.objects.all()
+        total = routes.count()
+        completed = routes.filter(status="completed").count()
+        escalated = routes.filter(status="escalated").count()
+
+        def rate(part, whole):
+            return round(part / whole, 3) if whole else None
+
+        top_types = routes.values("intent").annotate(n=Count("id")).order_by("-n")[:5]
+
+        resolved = StaffTask.objects.exclude(resolved_at=None)
+        avg_response = resolved.aggregate(avg=Avg(F("resolved_at") - F("created_at")))["avg"]
+
+        return Response({
+            "volume": {
+                "sessions": PatientSession.objects.count(),
+                "intents_routed": total,
+            },
+            "automation": {
+                "completed": completed,
+                "escalated": escalated,
+                "automation_rate": rate(completed, total),
+                "escalation_rate": rate(escalated, total),
+            },
+            "avg_staff_response_seconds": (
+                round(avg_response.total_seconds(), 1) if avg_response else None
+            ),
+            "top_request_types": [
+                {"intent": row["intent"], "count": row["n"]} for row in top_types
+            ],
+        })
 
 
 # -- generic CRUD (dev/admin convenience) ---------------------------------------------

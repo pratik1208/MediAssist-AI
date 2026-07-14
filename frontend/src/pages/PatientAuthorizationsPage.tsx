@@ -7,6 +7,7 @@ import { getMyAuthorizations } from '../lib/priorauthApi'
 import {
   clearTriageSession,
   registrationSessionToken,
+  sessionUnusable,
   triageSessionToken,
 } from '../lib/session'
 
@@ -67,8 +68,7 @@ export default function PatientAuthorizationsPage() {
     retry: false,
   })
 
-  const authFailed =
-    authorizations.isError && [401, 403].includes((authorizations.error as { status?: number })?.status ?? 0)
+  const authFailed = authorizations.isError && sessionUnusable(authorizations.error)
   if (authFailed && token !== null) {
     clearTriageSession()
     setToken(null)

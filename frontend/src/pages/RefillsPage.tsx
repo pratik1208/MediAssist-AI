@@ -13,6 +13,7 @@ import type { RefillStatus } from '../lib/refillsApi'
 import {
   clearTriageSession,
   registrationSessionToken,
+  sessionUnusable,
   triageSessionToken,
 } from '../lib/session'
 
@@ -79,9 +80,9 @@ export default function RefillsPage() {
     retry: false,
   })
 
-  // A stale session token means every patient call 401/403s — back to sign-in.
+  // A stale/patient-less session token can't read patient data — back to sign-in.
   const authFailed = [prescriptions, status].some(
-    (q) => q.isError && [401, 403].includes((q.error as { status?: number })?.status ?? 0),
+    (q) => q.isError && sessionUnusable(q.error),
   )
   useEffect(() => {
     if (authFailed) {

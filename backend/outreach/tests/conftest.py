@@ -29,3 +29,6 @@ def _no_real_ai_calls(monkeypatch):
         raise RuntimeError("real AI call attempted in tests")
 
     monkeypatch.setattr("outreach.ai.call_tool", _blocked)
+    # Phase 6 wires the inbound webhook's unmatched-sender fallback into the
+    # frontdesk router (Agent 9) — block that side too.
+    monkeypatch.setattr("frontdesk.ai.call_tool", _blocked)

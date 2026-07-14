@@ -35,9 +35,14 @@ from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.db.models import F
 from django.utils import timezone
 
-from core.models import AuditEvent, Patient
+from core.models import AuditEvent, Conversation, Message, Patient
 from frontdesk.models import IntentRoute, KnowledgeArticle, PatientSession, StaffTask
 from registration.services import create_otp, verify_otp
+
+# Channels with no signed session token to correlate by -- SMS/WhatsApp
+# replies are matched to an existing session via PatientSession.channel_identifier
+# instead (Phase 6 channel adapter).
+_TOKENLESS_CHANNELS = {"sms", "whatsapp"}
 
 log = logging.getLogger("frontdesk")
 
@@ -372,3 +377,55 @@ def resume_pending_intents(session: PatientSession) -> list[dict]:
     session.save(update_fields=["pending_intents"])
     return [dispatch_intent(session, item.get("intent", "other"), item.get("payload"))
             for item in pending]
+
+
+# -- Phase 6: channel adapters ("one front door for everything") ------------------
+
+def _channel_history(session: PatientSession, limit: int = 10) -> list[dict]:
+    rows = (Message.objects
+            .filter(conversation=session.conversation, role__in=["Patient", "Assistant"])
+            .order_by("-id")[:limit])
+    return [{"role": "user" if m.role == "Patient" else "assistant", "content": m.content}
+            for m in reversed(rows)]
+
+
+def handle_channel_message(channel: str, sender: str, text: str) -> dict:
+    """Route an inbound SMS/WhatsApp reply that Agent 7's webhook couldn't
+    match to a running campaign (FR-A8's "one front door" -- a provider
+    reply outside a campaign must still reach the front desk, not a 404).
+
+    Provider messages carry no signed session token, so the sender's raw
+    address is the correlation key: the same phone number's next message
+    resumes the SAME session (including its auth state and any queued
+    intents), rather than starting over each time. The auth gate itself is
+    untouched -- arriving from a known number is not proof of DOB, so a
+    protected intent still gets challenged exactly as it would over web
+    chat (PRD Edge Case 12 must survive every entry point, not just one).
+    """
+    if channel not in _TOKENLESS_CHANNELS:
+        raise ValueError(f"channel must be one of {sorted(_TOKENLESS_CHANNELS)}")
+
+    session = (
+        PatientSession.objects
+        .filter(channel=channel, channel_identifier=sender)
+        .order_by("-id")
+        .first()
+    )
+    if session is None:
+        conversation = Conversation.objects.create(
+            channel=channel, started_at=timezone.now(),
+            agent_context={"active_agent": "frontdesk"},
+        )
+        session = PatientSession.objects.create(
+            conversation=conversation, channel=channel, channel_identifier=sender,
+        )
+
+    history = _channel_history(session)
+    Message.objects.create(conversation=session.conversation, role="Patient", content=text)
+
+    from frontdesk.ai import handle_frontdesk_message  # local: mirrors the chat view's import
+    outcome = handle_frontdesk_message(session, text, history=history)
+
+    Message.objects.create(conversation=session.conversation, role="Assistant",
+                           content=outcome.get("reply", ""))
+    return {"session_id": session.id, "conversation_id": session.conversation_id, **outcome}
