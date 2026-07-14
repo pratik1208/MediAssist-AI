@@ -45,7 +45,9 @@ class Patient(models.Model):
     REGISTRATION_CHOICES = [("in_process", "in_process"), ("verified", "verified"), ("duplicate_detected", "duplicate_detected"), ("complete", "complete")]
     id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    # Optional: single-name patients are common in India (blank, never null —
+    # name fields stay plain strings).
+    last_name = models.CharField(max_length=100, blank=True)
     # store contact numbers as strings to preserve leading zeros and allow +/()-characters
     contact_number = models.CharField(max_length=15)
     dob = models.DateField()

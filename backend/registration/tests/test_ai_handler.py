@@ -51,6 +51,20 @@ class TestDemographicsStage:
         conversation.refresh_from_db()
         assert conversation.patient_id == patient.id
 
+    def test_single_name_patient_registers_without_a_last_name(self, conversation):
+        """last_name is optional (single-name patients are common) — first
+        name + dob + phone is enough to create the record."""
+        result = run(
+            conversation,
+            first_name="Gagadhar", dob="1948-01-01", contact_number="8634567844",
+        )
+        assert result["stage"] == "identity_verification"
+        patient = Patient.objects.get()
+        assert patient.first_name == "Gagadhar"
+        assert patient.last_name == ""
+        conversation.refresh_from_db()
+        assert conversation.patient_id == patient.id
+
     def test_returning_patient_is_linked_not_duplicated(self, conversation, rahul):
         result = run(
             conversation,

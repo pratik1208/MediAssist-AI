@@ -217,7 +217,8 @@ def create_or_update_patient_record(
     """Write demographics + insurance + intake to the DB (stand-in for the FHIR write-back).
 
     Pass patient=None to create a new record (demographics must then hold
-    at least first_name, last_name, dob, contact_number). Each section is
+    at least first_name, dob, contact_number — last_name is optional,
+    single-name patients are common). Each section is
     optional — send only what the conversation collected so far. All
     writes land in one transaction and every write leaves an AuditEvent
     row (ORCHESTRATION.md -> EHR write layer). When a real FHIR target

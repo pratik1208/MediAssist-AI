@@ -88,7 +88,10 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
     their existing record, and a possible duplicate is never auto-created.
     """
 
-    REQUIRED = ("first_name", "last_name", "dob", "contact_number")
+    # last_name is optional — single-name patients are common in India, and
+    # duplicate detection works from dob + phone (+ name similarity when a
+    # last name IS given).
+    REQUIRED = ("first_name", "dob", "contact_number")
 
     def post(self, request):
         missing = sorted(f for f in self.REQUIRED if not request.data.get(f))
@@ -98,7 +101,7 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        full_name = f"{request.data['first_name']} {request.data['last_name']}"
+        full_name = f"{request.data['first_name']} {request.data.get('last_name', '')}".strip()
         match, candidates = services.find_matching_patients(
             full_name, request.data["dob"], request.data["contact_number"]
         )
@@ -349,12 +352,24 @@ STAGE_REPLY_GUIDANCE = {
                       "will review it before their registration continues. Do not re-ask their details.",
     "identity_verification": "Tell the patient a 6-digit verification code is being sent to their "
                              "phone, and ask them to type it into the code box shown on screen.",
-    "insurance": "Ask the patient to upload a photo of their insurance card with the upload button, "
-                 "or to tell you their provider name and policy number.",
+    "insurance": "The next required step is insurance. Ask the patient to upload a photo of their "
+                 "insurance card with the upload button, or to tell you their provider name and "
+                 "policy number.",
     "intake": "Continue the medical intake. Ask exactly ONE question, about: {topic}.",
     "done": "Tell the patient their registration is complete and a clinician will review their "
             "information. Offer to help book an appointment next.",
 }
+
+# The stage machine (code) outranks conversational momentum (model): until
+# the gate says "done", the model must never wrap up or claim completion —
+# even when the patient says "no" / "that's all". Without this hard line the
+# model happily says "you're all set" right after OTP verification while the
+# insurance step is still pending.
+_NOT_DONE_GUARD = (
+    "IMPORTANT: The patient's registration is NOT finished yet. Never say it is "
+    "complete, never wrap up or say goodbye — always steer back to the next "
+    "required step described below, even if the patient says they need nothing else. "
+)
 
 
 # Demographic fields the chat model should treat as already collected when
@@ -429,6 +444,8 @@ class RegistrationChatAPIView(RegistrationSessionAPIView):
         result = handle_registration_message(conversation, history)
         topic = result.get("next_question_topic") or "whatever is still missing"
         guidance = STAGE_REPLY_GUIDANCE[result["stage"]].format(topic=topic)
+        if result["stage"] != "done":
+            guidance = _NOT_DONE_GUARD + guidance
 
         def event_stream():
             parts = []

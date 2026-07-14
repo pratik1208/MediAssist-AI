@@ -126,7 +126,16 @@ export default function RegistrationChatPage() {
         }
       })
       if (assembled) append('assistant', assembled)
-    } catch {
+    } catch (err: unknown) {
+      const status_ = (err as { status?: number })?.status
+      if (status_ === 401 || status_ === 403) {
+        // The saved session no longer exists on the server (expired or
+        // cleaned up) — a dead token can never recover, so start fresh
+        // instead of failing on every message forever.
+        sessionStorage.removeItem(STORAGE_KEY)
+        window.location.reload()
+        return
+      }
       append('error', "Sorry — I couldn't reach the clinic system. Please try again.")
     } finally {
       setStreamText('')

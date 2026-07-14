@@ -17,7 +17,9 @@ from registration.ai.tools import RECORD_REGISTRATION_DATA_TOOL
 from registration.models import InsurancePolicy
 
 # The minimum needed to run duplicate detection and create a record (FR-R3).
-DEMOGRAPHIC_MINIMUM = ("first_name", "last_name", "dob", "contact_number")
+# last_name is deliberately NOT required: single-name patients are common in
+# India, and dob + phone carry the duplicate check on their own.
+DEMOGRAPHIC_MINIMUM = ("first_name", "dob", "contact_number")
 
 DEMOGRAPHIC_FIELDS = (
     "first_name", "last_name", "dob", "contact_number", "email", "address",
@@ -71,7 +73,7 @@ def handle_registration_message(conversation: Conversation, conversation_history
         pending = {**ctx.get("pending_demographics", {}), **demographics}
         ctx["pending_demographics"] = pending
         if all(pending.get(f) for f in DEMOGRAPHIC_MINIMUM):
-            full_name = f"{pending['first_name']} {pending['last_name']}"
+            full_name = f"{pending['first_name']} {pending.get('last_name', '')}".strip()
             match, candidates = services.find_matching_patients(
                 full_name, pending["dob"], pending["contact_number"]
             )

@@ -87,6 +87,33 @@ class TestRegistrationChat:
         assert history[1] == {"role": "user", "content": "hello"}
 
 
+class TestStageGuardInReplyPrompt:
+    """The stage machine outranks conversational momentum: until the gate says
+    "done", the reply prompt must carry the hard don't-wrap-up guard (the model
+    otherwise says "you're all set" right after OTP while insurance is pending)."""
+
+    def _system_for(self, client, stage):
+        token = start_session(client)["session_token"]
+        result = {**HANDLER_RESULT, "stage": stage}
+        with patch("registration.views.handle_registration_message", return_value=result), \
+             patch("registration.views.stream_reply", return_value=iter(["ok"])) as stream:
+            response = client.post(CHAT_URL, {"message": "hi"},
+                                   content_type="application/json",
+                                   headers={"X-Session-Token": token})
+            b"".join(response.streaming_content)  # drain so stream_reply runs
+        return stream.call_args.kwargs["system"]
+
+    def test_not_done_stages_carry_the_guard(self, client, db):
+        system = self._system_for(client, "insurance")
+        assert "NOT finished" in system
+        assert "insurance" in system
+
+    def test_done_stage_does_not_carry_the_guard(self, client, db):
+        system = self._system_for(client, "done")
+        assert "NOT finished" not in system
+        assert "registration is complete" in system
+
+
 class TestRegistrationCompletedWiring:
     def test_completion_notifies_the_patient_to_book(self, rahul):
         # complete_registration -> emit() -> scheduling subscriber -> notify()

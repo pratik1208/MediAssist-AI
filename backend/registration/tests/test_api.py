@@ -125,6 +125,18 @@ class TestDemographics:
         assert response.status_code == 400
         assert "contact_number" in response.json()["error"]
 
+    def test_single_name_patient_needs_no_last_name(self, client, db):
+        """last_name is optional — single-name patients are common."""
+        token = start_session(client)["session_token"]
+        response = post_json(client, "/api/registration/demographics", {
+            "first_name": "Gagadhar", "dob": "1948-01-01",
+            "contact_number": "8634567844",
+        }, token)
+        assert response.status_code == 201
+        patient = Patient.objects.get(id=response.json()["patient_id"])
+        assert patient.first_name == "Gagadhar"
+        assert patient.last_name == ""
+
     def test_duplicate_hold_is_recorded_on_the_conversation(self, client, db):
         # The chat state gate and the duplicates_prevented analytics both
         # read duplicate_candidate_ids from agent_context.
