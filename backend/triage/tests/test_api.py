@@ -97,8 +97,10 @@ class TestStartAssessment:
         assert assessment.clinical_protocol is None
 
     def test_unmatched_symptoms_get_422_not_a_wrong_protocol(self, client, seeded, session):
+        # A twisted ankle now legitimately matches the Minor Injury protocol,
+        # so this needs a complaint no seeded protocol's keywords cover.
         response = post_json(client, START_URL,
-                             {"symptoms_text": "I twisted my ankle"},
+                             {"symptoms_text": "my hair has been falling out a lot lately"},
                              session["token"])
         assert response.status_code == 422
 
