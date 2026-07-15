@@ -63,11 +63,14 @@ export default function RegistrationChatPage() {
   const [otpSent, setOtpSent] = useState(false)
   const [otpBusy, setOtpBusy] = useState(false)
   const [startError, setStartError] = useState(false)
-  // After registration completes, "Book an appointment" keeps the same chat
-  // going in scheduling mode instead of navigating away to /schedule.
+  // After registration completes, the same chat flows straight into
+  // scheduling mode instead of navigating away to /schedule.
   const [booking, setBooking] = useState(false)
   const [schedHistory, setSchedHistory] = useState<ChatMessage[]>([])
   const [bookingBusy, setBookingBusy] = useState(false)
+  // Synchronous re-entry guard: StrictMode double-fires the auto-start
+  // effect before the `booking` state commit lands.
+  const bookingStarted = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -84,6 +87,7 @@ export default function RegistrationChatPage() {
       setPatientId(state.patientId ?? null)
       setOtpSent(state.otpSent ?? false)
       setBooking(state.booking ?? false)
+      bookingStarted.current = state.booking ?? false
       setSchedHistory(state.schedHistory ?? [])
       nextId = state.items.length + 1
       return
@@ -128,9 +132,9 @@ export default function RegistrationChatPage() {
 
   // Scheduling mode: same window, but messages go to the (stateless)
   // scheduling agent, which replies with either text or bookable slots.
-  const sendScheduling = async (text: string) => {
+  const sendScheduling = async (text: string, visible = true) => {
     if (sending) return
-    append('user', text)
+    if (visible) append('user', text)
     const history = [...schedHistory, { role: 'user' as const, content: text }]
     setSchedHistory(history)
     setSending(true)
@@ -154,13 +158,36 @@ export default function RegistrationChatPage() {
     }
   }
 
-  const startBooking = () => {
-    if (booking) return
+  const startBooking = async () => {
+    if (bookingStarted.current) return
+    bookingStarted.current = true
     setBooking(true)
-    append('assistant',
-      "Great — let's book your appointment right here. Describe your symptoms " +
-      "and when you'd like to come in — for example: \"I've had a mild fever " +
-      'since yesterday, can I see someone tomorrow morning?"')
+    // Symptoms were already collected during intake — open the booking
+    // conversation with them so the agent doesn't ask a second time.
+    let symptoms: string[] = []
+    if (token) {
+      try {
+        const status = await getRegistrationStatus(token)
+        // Extraction sometimes records bare acknowledgements ("yes") as
+        // symptoms — drop those before echoing them back to the patient.
+        symptoms = (status.handoff_symptoms ?? [])
+          .filter((s) => !['yes', 'no', 'ok'].includes(s.trim().toLowerCase()))
+      } catch {
+        // Status unavailable — fall through and ask instead.
+      }
+    }
+    if (symptoms.length > 0) {
+      append('note', `Finding available doctors for: ${symptoms.join(', ')}…`)
+      await sendScheduling(
+        `I'd like to book an appointment. My symptoms are: ${symptoms.join(', ')}.`,
+        false,
+      )
+    } else {
+      append('assistant',
+        "Great — let's book your appointment right here. Describe your symptoms " +
+        "and when you'd like to come in — for example: \"I've had a mild fever " +
+        'since yesterday, can I see someone tomorrow morning?"')
+    }
   }
 
   const bookSlot = async (bubble: SlotsBubble, slot: Slot) => {
@@ -202,6 +229,14 @@ export default function RegistrationChatPage() {
       setBookingBusy(false)
     }
   }
+
+  // Registration finishing flows straight into booking: once the completion
+  // reply finishes streaming, the symptoms already on file are sent to the
+  // scheduling agent automatically — the patient just picks a slot.
+  useEffect(() => {
+    if (complete && !sending) void startBooking()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, sending])
 
   const send = async (text: string, visible = true) => {
     if (booking) {
@@ -398,14 +433,6 @@ export default function RegistrationChatPage() {
           </div>
         )}
 
-        {complete && !booking && (
-          <div className="mx-auto rounded-2xl border border-green-300 bg-green-50 px-4 py-3 text-center text-sm text-green-900">
-            🎉 Registration complete! A clinician will review your information.{' '}
-            <button type="button" onClick={startBooking} className="font-semibold underline">
-              Book an appointment
-            </button>
-          </div>
-        )}
         <div ref={bottomRef} />
       </div>
 

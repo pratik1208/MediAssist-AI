@@ -34,6 +34,8 @@ export type RegistrationChatEvent =
 export interface RegistrationStatus {
   registration_status: string
   missing: string[]
+  /** Symptoms collected during intake — absent until a patient record exists. */
+  handoff_symptoms?: string[]
 }
 
 async function post<T>(

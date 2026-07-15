@@ -9,7 +9,8 @@ export interface ChatMessage {
 /** A slot is a [start, end] pair of ISO datetime strings. */
 export type Slot = [string, string]
 
-/** The single JSON event streamed back by POST /api/chat. */
+/** A JSON event streamed by POST /api/chat — a slot search streams one
+ * "slots" event per available doctor (up to 3) so the patient can choose. */
 export type ChatResult =
   | { type: 'emergency'; message: string }
   | { type: 'clarification'; message: string }
