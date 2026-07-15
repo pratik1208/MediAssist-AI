@@ -71,10 +71,13 @@ class ChatAPIView(APIView):
     def post(self, request):
         conversation = request.data.get("conversation", [])
 
-        result = handle_patient_message(conversation)
+        results = handle_patient_message(conversation)
 
         def event_stream():
-            yield f"data: {json.dumps(result, cls=DjangoJSONEncoder)}\n\n"
+            # One SSE event per entry — a slot search streams one "slots"
+            # event per doctor, and the UI renders each as its own card.
+            for result in results:
+                yield f"data: {json.dumps(result, cls=DjangoJSONEncoder)}\n\n"
 
         return StreamingHttpResponse(
             event_stream(),

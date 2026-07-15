@@ -308,9 +308,14 @@ class RegistrationStatusAPIView(RegistrationSessionAPIView):
             missing.append("insurance")
         if not IntakeSummary.objects.filter(patient=patient).exists():
             missing.append("intake")
+        # Symptoms already collected during intake, so the booking flow the
+        # patient is handed off to doesn't ask for them a second time.
+        symptoms = (self.conversation.agent_context or {}).get(
+            "handoff", {}).get("symptoms", [])
         return Response({
             "registration_status": patient.registration_status,
             "missing": missing,
+            "handoff_symptoms": symptoms,
         })
 
 
@@ -357,7 +362,9 @@ STAGE_REPLY_GUIDANCE = {
                  "policy number.",
     "intake": "Continue the medical intake. Ask exactly ONE question, about: {topic}.",
     "done": "Tell the patient their registration is complete and a clinician will review their "
-            "information. Offer to help book an appointment next.",
+            "information. Then tell them you are now pulling up available doctors for the "
+            "symptoms they reported, and they can pick a time from the options about to "
+            "appear. Do NOT ask whether they want to book — booking starts automatically.",
 }
 
 # The stage machine (code) outranks conversational momentum (model): until

@@ -26,7 +26,7 @@ class TestSchedulingRedFlagGate:
         with patch("scheduling.ai.handler.extract_intent") as model:
             result = handle_patient_message(history)
         model.assert_not_called()  # the model is never consulted on a red flag
-        assert result == {"type": "emergency", "message": EMERGENCY_RESPONSE}
+        assert result == [{"type": "emergency", "message": EMERGENCY_RESPONSE}]
 
     def test_routine_booking_still_reaches_the_model(self):
         history = [{"role": "user", "content": "I need a skin checkup next week"}]
@@ -34,9 +34,9 @@ class TestSchedulingRedFlagGate:
                    return_value={"needs_clarification": True}) as model:
             result = handle_patient_message(history)
         model.assert_called_once()
-        assert result["type"] == "clarification"
+        assert result[0]["type"] == "clarification"
 
     def test_empty_history_is_safe(self):
         with patch("scheduling.ai.handler.extract_intent",
                    return_value={"needs_clarification": True}):
-            assert handle_patient_message([])["type"] == "clarification"
+            assert handle_patient_message([])[0]["type"] == "clarification"

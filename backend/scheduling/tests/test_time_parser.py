@@ -74,5 +74,5 @@ class TestHandlerTimeframeSafetyNet:
             result = handle_patient_message(
                 [{"role": "user", "content": "I have a mild rash"}]
             )
-        assert result["type"] == "clarification"
-        assert "tomorrow morning" in result["message"]
+        assert result[0]["type"] == "clarification"
+        assert "tomorrow morning" in result[0]["message"]

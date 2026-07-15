@@ -62,6 +62,69 @@ class Command(BaseCommand):
              "working_hours": WEEKDAYS_9_TO_5},
         ]
 
+        # A second, larger wave: every specialty gets at least two doctors,
+        # with extra cover where the chat routes most traffic (General
+        # Medicine, Pediatrics). Hours rotate through the three schedule
+        # shapes so slot variety shows up in the booking UI.
+        schedules = [ALL_WEEK_8_TO_20, WEEKDAYS_9_TO_5, WEEKENDS_AND_EVENINGS]
+        extra = [
+            ("Dr. Ananya Iyer", Specialty.GENERAL_MEDICINE),
+            ("Dr. Rohan Kulkarni", Specialty.GENERAL_MEDICINE),
+            ("Dr. Priya Nair", Specialty.GENERAL_MEDICINE),
+            ("Dr. Thomas Clark", Specialty.GENERAL_MEDICINE),
+            ("Dr. Sneha Deshpande", Specialty.CARDIOLOGY),
+            ("Dr. Arjun Menon", Specialty.CARDIOLOGY),
+            ("Dr. Rachel Lewis", Specialty.CARDIOLOGY),
+            ("Dr. Kavita Joshi", Specialty.DERMATOLOGY),
+            ("Dr. Nikhil Bhat", Specialty.DERMATOLOGY),
+            ("Dr. Laura Hall", Specialty.DERMATOLOGY),
+            ("Dr. Meenakshi Pillai", Specialty.PEDIATRICS),
+            ("Dr. Sameer Kapoor", Specialty.PEDIATRICS),
+            ("Dr. Angela Young", Specialty.PEDIATRICS),
+            ("Dr. Rajesh Khanna", Specialty.ORTHOPEDICS),
+            ("Dr. Pooja Hegde", Specialty.ORTHOPEDICS),
+            ("Dr. Steven Allen", Specialty.ORTHOPEDICS),
+            ("Dr. Nandini Reddy", Specialty.GYNECOLOGY),
+            ("Dr. Farah Sheikh", Specialty.GYNECOLOGY),
+            ("Dr. Karen Scott", Specialty.GYNECOLOGY),
+            ("Dr. Aditya Verma", Specialty.NEUROLOGY),
+            ("Dr. Shalini Gupta", Specialty.NEUROLOGY),
+            ("Dr. Imran Qureshi", Specialty.PSYCHIATRY),
+            ("Dr. Deepa Krishnan", Specialty.PSYCHIATRY),
+            ("Dr. Suresh Patil", Specialty.OPHTHALMOLOGY),
+            ("Dr. Ritu Malhotra", Specialty.OPHTHALMOLOGY),
+            ("Dr. Brian Adams", Specialty.OPHTHALMOLOGY),
+            ("Dr. Ganesh Shenoy", Specialty.ENT),
+            ("Dr. Alka Saxena", Specialty.ENT),
+            ("Dr. Manoj Tiwari", Specialty.GASTROENTEROLOGY),
+            ("Dr. Sunita Rane", Specialty.GASTROENTEROLOGY),
+            ("Dr. Kiran Desai", Specialty.ENDOCRINOLOGY),
+            ("Dr. Leela Chandran", Specialty.ENDOCRINOLOGY),
+            ("Dr. Peter Walker", Specialty.ENDOCRINOLOGY),
+            ("Dr. Abhay Chavan", Specialty.PULMONOLOGY),
+            ("Dr. Nisha Fernandes", Specialty.PULMONOLOGY),
+            ("Dr. Harish Naik", Specialty.UROLOGY),
+            ("Dr. Vandana Kelkar", Specialty.UROLOGY),
+            ("Dr. Mohan Swamy", Specialty.ONCOLOGY),
+            ("Dr. Grace Turner", Specialty.ONCOLOGY),
+            ("Dr. Sanjay Mishra", Specialty.ONCOLOGY),
+            ("Dr. Rekha Prasad", Specialty.NEPHROLOGY),
+            ("Dr. Anil Kamat", Specialty.NEPHROLOGY),
+            ("Dr. Shweta Dixit", Specialty.RHEUMATOLOGY),
+            ("Dr. Daniel King", Specialty.RHEUMATOLOGY),
+            ("Dr. Usha Menon", Specialty.INFECTIOUS_DISEASE),
+            ("Dr. Prakash Jha", Specialty.INFECTIOUS_DISEASE),
+            ("Dr. Tanvi Shah", Specialty.ALLERGY_IMMUNOLOGY),
+            ("Dr. Olivia Baker", Specialty.ALLERGY_IMMUNOLOGY),
+            ("Dr. Ravi Shankar", Specialty.EMERGENCY_MEDICINE),
+            ("Dr. Monica Green", Specialty.EMERGENCY_MEDICINE),
+        ]
+        doctors += [
+            {"name": name, "specialty": specialty,
+             "working_hours": schedules[i % len(schedules)]}
+            for i, (name, specialty) in enumerate(extra)
+        ]
+
         created_count = 0
         updated_count = 0
 

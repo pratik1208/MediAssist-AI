@@ -216,7 +216,8 @@ class TestFullRegistrationFlow:
         # 7. status shows nothing missing
         status_body = client.get("/api/registration/status",
                                  headers={"X-Session-Token": token}).json()
-        assert status_body == {"registration_status": "verified", "missing": []}
+        assert status_body == {"registration_status": "verified", "missing": [],
+                               "handoff_symptoms": []}
 
         # 8. complete -> event emitted for downstream agents
         done = post_json(client, "/api/registration/complete", {}, token)
@@ -249,6 +250,22 @@ class TestFullRegistrationFlow:
         response = post_json(client, "/api/registration/complete", {}, token)
         assert response.status_code == 400
         assert set(response.json()["missing"]) == {"identity", "insurance", "intake"}
+
+    def test_status_carries_intake_symptoms_for_the_booking_handoff(self, client, db):
+        # The UI opens the post-registration booking chat with these, so the
+        # scheduling agent doesn't re-ask what the patient already reported.
+        session = start_session(client)
+        token = session["session_token"]
+        post_json(client, "/api/registration/demographics", DEMOGRAPHICS, token)
+        conversation = Conversation.objects.get(id=session["conversation_id"])
+        conversation.agent_context = {
+            **(conversation.agent_context or {}),
+            "handoff": {"from": "registration", "symptoms": ["fever", "headache"]},
+        }
+        conversation.save(update_fields=["agent_context"])
+        status_body = client.get("/api/registration/status",
+                                 headers={"X-Session-Token": token}).json()
+        assert status_body["handoff_symptoms"] == ["fever", "headache"]
 
 
 class TestInsuranceCardExtraction:
