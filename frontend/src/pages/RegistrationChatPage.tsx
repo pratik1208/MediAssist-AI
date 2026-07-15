@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 
 import OtpInput from '../components/OtpInput'
 import ProgressSteps from '../components/ProgressSteps'
+import SlotPicker from '../components/SlotPicker'
+import { createAppointment, getDoctors, streamChat } from '../lib/api'
 import {
   getRegistrationStatus,
   requestOtp,
@@ -12,12 +14,22 @@ import {
   verifyOtp,
 } from '../lib/registrationApi'
 import type { RegistrationStage, UiHint } from '../lib/registrationApi'
+import type { ChatMessage, ChatResult, Slot } from '../lib/types'
 
-interface Bubble {
+interface TextBubble {
   id: number
   kind: 'user' | 'assistant' | 'note' | 'success' | 'error'
   text: string
 }
+
+interface SlotsBubble {
+  id: number
+  kind: 'slots'
+  result: Extract<ChatResult, { type: 'slots' }>
+  booked: boolean
+}
+
+type Bubble = TextBubble | SlotsBubble
 
 const STORAGE_KEY = 'mediassist.registration'
 
@@ -30,7 +42,7 @@ const OTP_ERRORS: Record<string, string> = {
 
 let nextId = 1
 
-const GREETING: Bubble = {
+const GREETING: TextBubble = {
   id: 0,
   kind: 'assistant',
   text:
@@ -51,6 +63,11 @@ export default function RegistrationChatPage() {
   const [otpSent, setOtpSent] = useState(false)
   const [otpBusy, setOtpBusy] = useState(false)
   const [startError, setStartError] = useState(false)
+  // After registration completes, "Book an appointment" keeps the same chat
+  // going in scheduling mode instead of navigating away to /schedule.
+  const [booking, setBooking] = useState(false)
+  const [schedHistory, setSchedHistory] = useState<ChatMessage[]>([])
+  const [bookingBusy, setBookingBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -66,6 +83,8 @@ export default function RegistrationChatPage() {
       setComplete(state.complete ?? false)
       setPatientId(state.patientId ?? null)
       setOtpSent(state.otpSent ?? false)
+      setBooking(state.booking ?? false)
+      setSchedHistory(state.schedHistory ?? [])
       nextId = state.items.length + 1
       return
     }
@@ -78,16 +97,16 @@ export default function RegistrationChatPage() {
   useEffect(() => {
     if (token) {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(
-        { token, items, stage, hints, complete, patientId, otpSent },
+        { token, items, stage, hints, complete, patientId, otpSent, booking, schedHistory },
       ))
     }
-  }, [token, items, stage, hints, complete, patientId, otpSent])
+  }, [token, items, stage, hints, complete, patientId, otpSent, booking, schedHistory])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [items, streamText])
 
-  const append = (kind: Bubble['kind'], text: string) =>
+  const append = (kind: TextBubble['kind'], text: string) =>
     setItems((prev) => [...prev, { id: nextId++, kind, text }])
 
   const needsOtp = hints.includes('otp_required') && !complete
@@ -107,7 +126,88 @@ export default function RegistrationChatPage() {
     }
   }, [needsOtp, otpSent, token])
 
+  // Scheduling mode: same window, but messages go to the (stateless)
+  // scheduling agent, which replies with either text or bookable slots.
+  const sendScheduling = async (text: string) => {
+    if (sending) return
+    append('user', text)
+    const history = [...schedHistory, { role: 'user' as const, content: text }]
+    setSchedHistory(history)
+    setSending(true)
+    try {
+      await streamChat(history, (result) => {
+        if (result.type === 'slots') {
+          setItems((prev) => [...prev, { id: nextId++, kind: 'slots', result, booked: false }])
+          setSchedHistory((h) => [...h, {
+            role: 'assistant',
+            content: `Offered appointment slots with ${result.doctor} (${result.specialty}).`,
+          }])
+        } else {
+          append('assistant', result.message)
+          setSchedHistory((h) => [...h, { role: 'assistant', content: result.message }])
+        }
+      })
+    } catch {
+      append('error', "Sorry — I couldn't reach the clinic system. Please try again.")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const startBooking = () => {
+    if (booking) return
+    setBooking(true)
+    append('assistant',
+      "Great — let's book your appointment right here. Describe your symptoms " +
+      "and when you'd like to come in — for example: \"I've had a mild fever " +
+      'since yesterday, can I see someone tomorrow morning?"')
+  }
+
+  const bookSlot = async (bubble: SlotsBubble, slot: Slot) => {
+    if (bookingBusy) return
+    if (patientId === null) {
+      append('error', "We couldn't find your patient record — please refresh and try again.")
+      return
+    }
+    setBookingBusy(true)
+    try {
+      const doctors = await getDoctors()
+      const doctor = doctors.find((d) => d.name === bubble.result.doctor)
+      if (!doctor) {
+        append('error', "Couldn't identify the doctor for this slot — please ask for times again.")
+        return
+      }
+      const reason = schedHistory.find((m) => m.role === 'user')?.content
+        ?? 'Appointment requested via chat'
+      const appointment = await createAppointment({
+        doctor: doctor.id,
+        patient: patientId,
+        start_time: slot[0],
+        end_time: slot[1],
+        reason,
+        urgency: 'routine',
+        source: 'scheduling',
+      })
+      setItems((prev) => prev.map((item) =>
+        item.kind === 'slots' ? { ...item, booked: true } : item,
+      ))
+      const when = new Date(slot[0]).toLocaleString(undefined, {
+        weekday: 'long', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      })
+      append('success', `🎉 You're booked for ${when} (appointment #${appointment.id}). See you then!`)
+    } catch {
+      append('error', "That slot couldn't be booked — it may have just been taken. Please pick another time.")
+    } finally {
+      setBookingBusy(false)
+    }
+  }
+
   const send = async (text: string, visible = true) => {
+    if (booking) {
+      await sendScheduling(text)
+      return
+    }
     if (!token || sending) return
     if (visible) append('user', text)
     setSending(true)
@@ -201,6 +301,7 @@ export default function RegistrationChatPage() {
     note: 'mx-auto border border-slate-200 bg-slate-100 text-slate-600 text-center',
     success: 'mr-auto border border-green-300 bg-green-50 text-green-900',
     error: 'mr-auto border border-amber-300 bg-amber-50 text-amber-900',
+    slots: 'mr-auto border border-slate-200 bg-white text-slate-800',
   }
 
   return (
@@ -244,7 +345,22 @@ export default function RegistrationChatPage() {
             key={item.id}
             className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${bubbleClass[item.kind]}`}
           >
-            {item.text}
+            {item.kind === 'slots' ? (
+              <>
+                <p>
+                  {item.booked
+                    ? `Slots with ${item.result.doctor} (${item.result.specialty}):`
+                    : `Here are the available times with ${item.result.doctor} (${item.result.specialty}) — tap one to book:`}
+                </p>
+                <SlotPicker
+                  slots={item.result.slots}
+                  disabled={item.booked || bookingBusy}
+                  onPick={(slot) => void bookSlot(item, slot)}
+                />
+              </>
+            ) : (
+              item.text
+            )}
           </div>
         ))}
 
@@ -282,12 +398,12 @@ export default function RegistrationChatPage() {
           </div>
         )}
 
-        {complete && (
+        {complete && !booking && (
           <div className="mx-auto rounded-2xl border border-green-300 bg-green-50 px-4 py-3 text-center text-sm text-green-900">
             🎉 Registration complete! A clinician will review your information.{' '}
-            <Link to="/schedule" state={{ patientId }} className="font-semibold underline">
+            <button type="button" onClick={startBooking} className="font-semibold underline">
               Book an appointment
-            </Link>
+            </button>
           </div>
         )}
         <div ref={bottomRef} />
@@ -315,6 +431,7 @@ export default function RegistrationChatPage() {
             if (file) void onFilePicked(file)
           }}
         />
+        {!booking && (
         <button
           type="button"
           title={`Upload ${(uploadHint?.upload ?? 'insurance_card').replace('_', ' ')}`}
@@ -326,10 +443,15 @@ export default function RegistrationChatPage() {
         >
           📎
         </button>
+        )}
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={token ? 'Type your answer…' : 'Starting session…'}
+          placeholder={
+            booking
+              ? 'Describe your symptoms and preferred time…'
+              : token ? 'Type your answer…' : 'Starting session…'
+          }
           disabled={!token}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm
                      text-slate-900 focus:border-teal-600 focus:outline-none"
