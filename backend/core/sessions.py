@@ -8,17 +8,21 @@ later agents all share this one door.
 The salt value predates this module (tokens were first issued by
 registration) and must not change, or every session in flight breaks.
 """
-
+# Create and verify secure tokens.
 from django.core import signing
+
 from rest_framework.exceptions import AuthenticationFailed
+# Used to return API responses.
 from rest_framework.response import Response
+# Contains HTTP status codes.
 from rest_framework import status
+# Base class for DRF APIs.
 from rest_framework.views import APIView
 
 from core.models import Conversation
-
+# Salt used while signing tokens.
 SESSION_SALT = "registration.session"
-
+# Extra secret string used when creating/verifying tokens.
 
 class SessionTokenAPIView(APIView):
     """Base for endpoints that require a session token from /start.
@@ -26,16 +30,17 @@ class SessionTokenAPIView(APIView):
     Clients send the token in an X-Session-Token header. A bad or missing
     token is rejected before the endpoint's own code runs.
     """
-
+    # initial() runs automatically BEFORE get() or post().
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
+        # Calls DRF's default initialization code.
         token = request.headers.get("X-Session-Token", "")
         try:
             payload = signing.loads(token, salt=SESSION_SALT)
             self.conversation = Conversation.objects.get(id=payload["conversation_id"])
         except (signing.BadSignature, Conversation.DoesNotExist):
             raise AuthenticationFailed("missing or invalid session token")
-
+    # Give me the patient or return an error.
     def patient_or_error(self):
         """The session's patient, or a 400 telling the client what to do first."""
         if self.conversation.patient is None:

@@ -419,14 +419,15 @@ def on_file_context(conversation):
     )
     return {"role": "user", "content": note}
 
-
+# Many API calls, same conversation_id, same session_token.
 class RegistrationChatAPIView(RegistrationSessionAPIView):
     """POST /api/registration/chat — {message} -> SSE stream (spec API table).
-
-    Two model calls per turn: handle_registration_message extracts data and
-    picks the stage, then stream_reply writes the patient-visible answer,
-    streamed as SSE. The final SSE event carries stage/ui_hints so the
-    frontend can show the OTP box or upload button.
+    # SSE stands for Server-Sent Events.
+    # It is a way for the server to continuously send data to the client over a single HTTP connection.
+        Two model calls per turn: handle_registration_message extracts data and
+        picks the stage, then stream_reply writes the patient-visible answer,
+        streamed as SSE. The final SSE event carries stage/ui_hints so the
+        frontend can show the OTP box or upload button.
     """
 
     def post(self, request):
@@ -472,7 +473,7 @@ class RegistrationChatAPIView(RegistrationSessionAPIView):
 
         return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
 
-
+# is an HTTP response that continuously sends SSE events to the frontend, not a single JSON object.
 class RegistrationAnalyticsAPIView(APIView):
     """GET /api/staff/registration/analytics — FR-R10 aggregates (staff only)."""
 
