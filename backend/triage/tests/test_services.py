@@ -60,7 +60,10 @@ class TestSelectProtocol:
         assert select_protocol("I have no fever, just a pounding headache").name == "Headache"
 
     def test_no_match_returns_none_not_a_wrong_protocol(self, seeded):
-        assert select_protocol("I twisted my ankle playing football") is None
+        # A twisted ankle is deliberately NOT used here — the Minor Injury
+        # protocol added later legitimately matches it — so this needs a
+        # complaint no seeded protocol's keywords cover at all.
+        assert select_protocol("my hair has been falling out a lot lately") is None
 
     def test_empty_and_none_input(self, seeded):
         assert select_protocol("") is None
