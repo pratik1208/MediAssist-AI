@@ -53,7 +53,6 @@ def handle_registration_message(conversation: Conversation, conversation_history
         messages=conversation_history,
         tool=RECORD_REGISTRATION_DATA_TOOL,
     )
-
     ctx = conversation.agent_context
     patient = conversation.patient
     if patient is not None:
