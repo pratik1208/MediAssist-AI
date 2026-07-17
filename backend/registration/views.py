@@ -42,7 +42,6 @@ from core.sessions import (
     SessionTokenAPIView as RegistrationSessionAPIView,  # noqa: E402
 )
 
-
 class StartRegistrationAPIView(APIView):
     """POST /api/registration/start — begin a registration session.
 
