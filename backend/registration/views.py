@@ -28,8 +28,6 @@ from registration.serializers import (
 class InsurancePolicyCRUDAPIView(BaseCRUDAPIView):
     model = InsurancePolicy
     serializer_class = InsurancePolicySerializer
-
-
 class IntakeSummaryCRUDAPIView(BaseCRUDAPIView):
     model = IntakeSummary
     serializer_class = IntakeSummarySerializer
