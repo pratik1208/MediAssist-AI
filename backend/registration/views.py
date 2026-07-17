@@ -1,28 +1,28 @@
 # from rest_framework.response import Response
+import json
+
+from core.ai import stream_reply
+from core.base_crud_views import BaseCRUDAPIView
+from core.models import Conversation, Message, OTPChallenge, Patient
 from django.core import signing
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-import json
-from core.ai import stream_reply
-from core.base_crud_views import BaseCRUDAPIView
-from core.models import Conversation, Message, OTPChallenge, Patient
+
+from registration import services
 from registration.ai.extract import run_document_extraction
 from registration.ai.handler import handle_registration_message
 from registration.ai.prompts import REGISTRATION_SYSTEM_PROMPT
 from registration.models import InsurancePolicy, IntakeSummary, UploadedDocument
-from registration import services
-
 from registration.serializers import (
     InsurancePolicySerializer,
     IntakeSummarySerializer,
-    UploadedDocumentSerializer
+    UploadedDocumentSerializer,
 )
 
 
@@ -44,7 +44,9 @@ class UploadedDocumentCRUDAPIView(BaseCRUDAPIView):
 # Session auth moved to core.sessions so other agents (triage, ...) can share
 # it; these aliases keep registration's public names stable.
 from core.sessions import SESSION_SALT as REGISTRATION_SESSION_SALT  # noqa: E402
-from core.sessions import SessionTokenAPIView as RegistrationSessionAPIView  # noqa: E402
+from core.sessions import (
+    SessionTokenAPIView as RegistrationSessionAPIView,  # noqa: E402
+)
 
 
 class StartRegistrationAPIView(APIView):
@@ -72,9 +74,7 @@ class StartRegistrationAPIView(APIView):
                 "registration_stage": "demographics",
             },
         )
-        session_token = signing.dumps(
-            {"conversation_id": conversation.id}, salt=REGISTRATION_SESSION_SALT
-        )
+        session_token = signing.dumps({"conversation_id": conversation.id}, salt=REGISTRATION_SESSION_SALT)
         return Response(
             {"session_token": session_token, "conversation_id": conversation.id},
             status=status.HTTP_201_CREATED,
@@ -102,9 +102,7 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
             )
 
         full_name = f"{request.data['first_name']} {request.data.get('last_name', '')}".strip()
-        match, candidates = services.find_matching_patients(
-            full_name, request.data["dob"], request.data["contact_number"]
-        )
+        match, candidates = services.find_matching_patients(full_name, request.data["dob"], request.data["contact_number"])
         if match == "possible_duplicate":
             # Record the hold on the conversation, matching what the chat
             # handler does — the chat state gate and the duplicates_prevented
@@ -115,16 +113,16 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
             self.conversation.agent_context = ctx
             self.conversation.save(update_fields=["agent_context"])
             return Response(
-                {"match": "possible_duplicate",
-                 "detail": "a similar patient exists; staff must resolve before continuing",
-                 "candidate_ids": [p.id for p in candidates]},
+                {
+                    "match": "possible_duplicate",
+                    "detail": "a similar patient exists; staff must resolve before continuing",
+                    "candidate_ids": [p.id for p in candidates],
+                },
                 status=status.HTTP_409_CONFLICT,
             )
-        #registraion is paused until review duplicate
+        # registraion is paused until review duplicate
         existing = candidates[0] if match == "existing" else None
-        patient = services.create_or_update_patient_record(
-            existing, demographics=dict(request.data)
-        )
+        patient = services.create_or_update_patient_record(existing, demographics=dict(request.data))
         self.conversation.patient = patient
         self.conversation.save(update_fields=["patient"])
         return Response(
@@ -142,8 +140,7 @@ class RequestOtpAPIView(RegistrationSessionAPIView):
             return error
 
         # Channel choices are stored as e.g. "SMS"/"email"; accept any casing.
-        by_lower = {value.lower(): value
-                    for value, _ in OTPChallenge._meta.get_field("channel").choices}
+        by_lower = {value.lower(): value for value, _ in OTPChallenge._meta.get_field("channel").choices}
         channel = by_lower.get(str(request.data.get("channel", "SMS")).lower())
         if channel is None:
             return Response(
@@ -215,9 +212,7 @@ class UploadDocumentAPIView(RegistrationSessionAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        document = UploadedDocument.objects.create(
-            patient=patient, document_type=doc_type, file=upload
-        )
+        document = UploadedDocument.objects.create(patient=patient, document_type=doc_type, file=upload)
 
         try:
             extracted = run_document_extraction(document)
@@ -236,9 +231,7 @@ class UploadDocumentAPIView(RegistrationSessionAPIView):
                 if card.get(field):
                     insurance[field] = card[field]
             services.create_or_update_patient_record(patient, insurance=insurance)
-            policy = InsurancePolicy.objects.get(
-                patient=patient, policy_number=card["policy_number"]
-            )
+            policy = InsurancePolicy.objects.get(patient=patient, policy_number=card["policy_number"])
             policy.raw_extraction = extracted
             policy.save(update_fields=["raw_extraction"])
             services.verify_insurance_eligibility(policy)
@@ -246,9 +239,7 @@ class UploadDocumentAPIView(RegistrationSessionAPIView):
 
         document.refresh_from_db()  # run_document_extraction updates the status
         return Response(
-            {"id": document.id, "doc_type": document.document_type,
-             "extraction_status": document.extraction_status,
-             "policy_created": policy_created},
+            {"id": document.id, "doc_type": document.document_type, "extraction_status": document.extraction_status, "policy_created": policy_created},
             status=status.HTTP_201_CREATED,
         )
 
@@ -279,13 +270,10 @@ class SubmitInsuranceAPIView(RegistrationSessionAPIView):
         insurance.setdefault("coverage_details", "")
         services.create_or_update_patient_record(patient, insurance=insurance)
 
-        policy = InsurancePolicy.objects.get(
-            patient=patient, policy_number=insurance["policy_number"]
-        )
+        policy = InsurancePolicy.objects.get(patient=patient, policy_number=insurance["policy_number"])
         result = services.verify_insurance_eligibility(policy)
         return Response(
-            {"policy_id": policy.id, "eligibility_status": policy.eligibility_status,
-             "flagged": result.status == "ineligible"},
+            {"policy_id": policy.id, "eligibility_status": policy.eligibility_status, "flagged": result.status == "ineligible"},
             status=status.HTTP_201_CREATED,
         )
 
@@ -296,10 +284,12 @@ class RegistrationStatusAPIView(RegistrationSessionAPIView):
     def get(self, request):
         patient = self.conversation.patient
         if patient is None:
-            return Response({
-                "registration_status": "in_process",
-                "missing": ["demographics", "identity", "insurance", "intake"],
-            })
+            return Response(
+                {
+                    "registration_status": "in_process",
+                    "missing": ["demographics", "identity", "insurance", "intake"],
+                }
+            )
 
         missing = []
         if not patient.identity_verified:
@@ -310,13 +300,14 @@ class RegistrationStatusAPIView(RegistrationSessionAPIView):
             missing.append("intake")
         # Symptoms already collected during intake, so the booking flow the
         # patient is handed off to doesn't ask for them a second time.
-        symptoms = (self.conversation.agent_context or {}).get(
-            "handoff", {}).get("symptoms", [])
-        return Response({
-            "registration_status": patient.registration_status,
-            "missing": missing,
-            "handoff_symptoms": symptoms,
-        })
+        symptoms = (self.conversation.agent_context or {}).get("handoff", {}).get("symptoms", [])
+        return Response(
+            {
+                "registration_status": patient.registration_status,
+                "missing": missing,
+                "handoff_symptoms": symptoms,
+            }
+        )
 
 
 class CompleteRegistrationAPIView(RegistrationSessionAPIView):
@@ -354,17 +345,17 @@ class CompleteRegistrationAPIView(RegistrationSessionAPIView):
 STAGE_REPLY_GUIDANCE = {
     "demographics": "Continue collecting demographics. Ask exactly ONE question, about: {topic}.",
     "duplicate_hold": "Tell the patient a very similar record already exists and a staff member "
-                      "will review it before their registration continues. Do not re-ask their details.",
+    "will review it before their registration continues. Do not re-ask their details.",
     "identity_verification": "Tell the patient a 6-digit verification code is being sent to their "
-                             "phone, and ask them to type it into the code box shown on screen.",
+    "phone, and ask them to type it into the code box shown on screen.",
     "insurance": "The next required step is insurance. Ask the patient to upload a photo of their "
-                 "insurance card with the upload button, or to tell you their provider name and "
-                 "policy number.",
+    "insurance card with the upload button, or to tell you their provider name and "
+    "policy number.",
     "intake": "Continue the medical intake. Ask exactly ONE question, about: {topic}.",
     "done": "Tell the patient their registration is complete and a clinician will review their "
-            "information. Then tell them you are now pulling up available doctors for the "
-            "symptoms they reported, and they can pick a time from the options about to "
-            "appear. Do NOT ask whether they want to book — booking starts automatically.",
+    "information. Then tell them you are now pulling up available doctors for the "
+    "symptoms they reported, and they can pick a time from the options about to "
+    "appear. Do NOT ask whether they want to book — booking starts automatically.",
 }
 
 # The stage machine (code) outranks conversational momentum (model): until
@@ -419,6 +410,7 @@ def on_file_context(conversation):
     )
     return {"role": "user", "content": note}
 
+
 # Many API calls, same conversation_id, same session_token.
 class RegistrationChatAPIView(RegistrationSessionAPIView):
     """POST /api/registration/chat — {message} -> SSE stream (spec API table).
@@ -439,9 +431,7 @@ class RegistrationChatAPIView(RegistrationSessionAPIView):
         Message.objects.create(conversation=conversation, role="Patient", content=text)
         history = [
             {"role": "user" if m.role == "Patient" else "assistant", "content": m.content}
-            for m in Message.objects.filter(
-                conversation=conversation, role__in=["Patient", "Assistant"]
-            ).order_by("id")
+            for m in Message.objects.filter(conversation=conversation, role__in=["Patient", "Assistant"]).order_by("id")
         ]
         # Rebuilt fresh each turn (never persisted as a Message), so it always
         # reflects the current record.
@@ -458,20 +448,17 @@ class RegistrationChatAPIView(RegistrationSessionAPIView):
         def event_stream():
             parts = []
             for delta in stream_reply(
-                system=REGISTRATION_SYSTEM_PROMPT
-                + "\n\nInstruction for your next message: " + guidance,
+                system=REGISTRATION_SYSTEM_PROMPT + "\n\nInstruction for your next message: " + guidance,
                 messages=history,
             ):
                 parts.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
-            Message.objects.create(
-                conversation=conversation, role="Assistant", content="".join(parts)
-            )
-            meta = {key: result[key] for key in
-                    ("stage", "ui_hints", "registration_complete", "patient_id")}
+            Message.objects.create(conversation=conversation, role="Assistant", content="".join(parts))
+            meta = {key: result[key] for key in ("stage", "ui_hints", "registration_complete", "patient_id")}
             yield f"data: {json.dumps({'done': True, **meta}, cls=DjangoJSONEncoder)}\n\n"
 
         return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+
 
 # is an HTTP response that continuously sends SSE events to the frontend, not a single JSON object.
 class RegistrationAnalyticsAPIView(APIView):
@@ -488,29 +475,27 @@ class RegistrationAnalyticsAPIView(APIView):
         def rate(part, whole):
             return round(part / whole, 3) if whole else None
 
-        return Response({
-            "patients": {
-                "total": total,
-                "completed": completed,
-                "completion_rate": rate(completed, total),
-                "identity_verified": Patient.objects.filter(identity_verified=True).count(),
-            },
-            "otp": {
-                "challenges_sent": otp_total,
-                "verified": otp_verified,
-                "verification_success_rate": rate(otp_verified, otp_total),
-            },
-            "duplicates_prevented": Conversation.objects.filter(
-                agent_context__has_key="duplicate_candidate_ids"
-            ).count(),
-            "insurance": {
-                "policies": InsurancePolicy.objects.count(),
-                "ineligible_flagged": InsurancePolicy.objects.filter(
-                    eligibility_status="ineligible"
-                ).count(),
-            },
-            "documents": {
-                "uploaded": UploadedDocument.objects.count(),
-                "extracted": UploadedDocument.objects.filter(extraction_status="done").count(),
-            },
-        })
+        return Response(
+            {
+                "patients": {
+                    "total": total,
+                    "completed": completed,
+                    "completion_rate": rate(completed, total),
+                    "identity_verified": Patient.objects.filter(identity_verified=True).count(),
+                },
+                "otp": {
+                    "challenges_sent": otp_total,
+                    "verified": otp_verified,
+                    "verification_success_rate": rate(otp_verified, otp_total),
+                },
+                "duplicates_prevented": Conversation.objects.filter(agent_context__has_key="duplicate_candidate_ids").count(),
+                "insurance": {
+                    "policies": InsurancePolicy.objects.count(),
+                    "ineligible_flagged": InsurancePolicy.objects.filter(eligibility_status="ineligible").count(),
+                },
+                "documents": {
+                    "uploaded": UploadedDocument.objects.count(),
+                    "extracted": UploadedDocument.objects.filter(extraction_status="done").count(),
+                },
+            }
+        )
