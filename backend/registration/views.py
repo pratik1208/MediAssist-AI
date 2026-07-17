@@ -31,8 +31,6 @@ class InsurancePolicyCRUDAPIView(BaseCRUDAPIView):
 class IntakeSummaryCRUDAPIView(BaseCRUDAPIView):
     model = IntakeSummary
     serializer_class = IntakeSummarySerializer
-
-
 class UploadedDocumentCRUDAPIView(BaseCRUDAPIView):
     model = UploadedDocument
     serializer_class = UploadedDocumentSerializer
