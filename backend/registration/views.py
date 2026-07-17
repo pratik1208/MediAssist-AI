@@ -73,7 +73,6 @@ class StartRegistrationAPIView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
-
 class SubmitDemographicsAPIView(RegistrationSessionAPIView):
     """POST /api/registration/demographics — create or reuse the patient record.
 
