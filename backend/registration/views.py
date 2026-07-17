@@ -35,7 +35,6 @@ class UploadedDocumentCRUDAPIView(BaseCRUDAPIView):
     model = UploadedDocument
     serializer_class = UploadedDocumentSerializer
 
-
 # Session auth moved to core.sessions so other agents (triage, ...) can share
 # it; these aliases keep registration's public names stable.
 from core.sessions import SESSION_SALT as REGISTRATION_SESSION_SALT  # noqa: E402
