@@ -122,7 +122,6 @@ class SubmitDemographicsAPIView(RegistrationSessionAPIView):
             status=status.HTTP_200_OK if match == "existing" else status.HTTP_201_CREATED,
         )
 
-
 class RequestOtpAPIView(RegistrationSessionAPIView):
     """POST /api/registration/otp/request — send a verification code (202)."""
 
