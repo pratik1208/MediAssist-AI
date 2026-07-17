@@ -14,6 +14,8 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+
+
 from registration import services
 from registration.ai.extract import run_document_extraction
 from registration.ai.handler import handle_registration_message
