@@ -149,7 +149,6 @@ class RequestOtpAPIView(RegistrationSessionAPIView):
 
 
 
-
 class VerifyOtpAPIView(RegistrationSessionAPIView):
     """POST /api/registration/otp/verify — {code} -> {verified: true} or 400."""
 
