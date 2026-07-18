@@ -148,6 +148,8 @@ class RequestOtpAPIView(RegistrationSessionAPIView):
         return Response({"detail": "verification code sent"}, status=status.HTTP_202_ACCEPTED)
 
 
+
+
 class VerifyOtpAPIView(RegistrationSessionAPIView):
     """POST /api/registration/otp/verify — {code} -> {verified: true} or 400."""
 
