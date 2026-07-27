@@ -6,7 +6,6 @@ makes the dynamic question flow model-driven while keeping data capture
 structured (FR-R1, FR-R4, FR-R5, FR-R6).
 """
 
-
 from core.ai import strict_tool
 
 # Topics the conversation layer can route on. "none" = nothing left to ask.
