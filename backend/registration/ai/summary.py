@@ -32,7 +32,6 @@ def _age(patient: Patient) -> int | None:
 
 
 
-
 @traceable(name="generate_intake_summary", run_type="chain")
 def generate_intake_summary(patient: Patient) -> IntakeSummary:
     """Fill in the patient's latest IntakeSummary with one API call.
